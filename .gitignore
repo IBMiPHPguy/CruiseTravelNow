@@ -1,0 +1,13 @@
+.env
+*.pyc
+__pycache__/
+.venv/
+venv/
+node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
+backend/uploads/
+.pytest_cache/
+.mypy_cache/
+*.log
+.DS_Store
