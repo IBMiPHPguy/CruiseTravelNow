@@ -87,6 +87,40 @@ class TravelRequest(Base):
         cascade="all, delete-orphan",
         order_by="QuotedInsurance.id.desc()",
     )
+    request_workflows: Mapped[list["RequestWorkflow"]] = relationship(
+        back_populates="travel_request",
+        cascade="all, delete-orphan",
+        order_by="RequestWorkflow.id.desc()",
+    )
+    request_communications: Mapped[list["RequestCommunication"]] = relationship(
+        back_populates="travel_request",
+        cascade="all, delete-orphan",
+        order_by="RequestCommunication.id.desc()",
+    )
+    research_documents: Mapped[list["RequestResearchDocument"]] = relationship(
+        back_populates="travel_request",
+        cascade="all, delete-orphan",
+        order_by="RequestResearchDocument.id.desc()",
+    )
+
+
+class Passenger(Base):
+    __tablename__ = "passengers"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    first_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    last_name: Mapped[str] = mapped_column(String(80), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
+    phone: Mapped[str] = mapped_column(String(30), nullable=False)
+    date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    created_by: Mapped[User | None] = relationship(foreign_keys=[created_by_id])
+    request_links: Mapped[list["RequestPassenger"]] = relationship(back_populates="passenger")
 
 
 class RequestPassenger(Base):
@@ -94,17 +128,55 @@ class RequestPassenger(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     travel_request_id: Mapped[int] = mapped_column(ForeignKey("travel_requests.id"), nullable=False)
-    first_name: Mapped[str] = mapped_column(String(80), nullable=False)
-    last_name: Mapped[str] = mapped_column(String(80), nullable=False)
-    email: Mapped[str] = mapped_column(String(255), nullable=False)
-    phone: Mapped[str] = mapped_column(String(30), nullable=False)
-    date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
+    passenger_id: Mapped[int] = mapped_column(ForeignKey("passengers.id"), nullable=False)
+    is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
     travel_request: Mapped[TravelRequest] = relationship(back_populates="request_passengers")
+    passenger: Mapped[Passenger] = relationship(back_populates="request_links")
+
+    @property
+    def first_name(self) -> str:
+        return self.passenger.first_name
+
+    @first_name.setter
+    def first_name(self, value: str) -> None:
+        self.passenger.first_name = value
+
+    @property
+    def last_name(self) -> str:
+        return self.passenger.last_name
+
+    @last_name.setter
+    def last_name(self, value: str) -> None:
+        self.passenger.last_name = value
+
+    @property
+    def email(self) -> str:
+        return self.passenger.email
+
+    @email.setter
+    def email(self, value: str) -> None:
+        self.passenger.email = value
+
+    @property
+    def phone(self) -> str:
+        return self.passenger.phone
+
+    @phone.setter
+    def phone(self, value: str) -> None:
+        self.passenger.phone = value
+
+    @property
+    def date_of_birth(self) -> date | None:
+        return self.passenger.date_of_birth
+
+    @date_of_birth.setter
+    def date_of_birth(self, value: date | None) -> None:
+        self.passenger.date_of_birth = value
 
 
 class TravelRequestAudit(Base):
@@ -293,3 +365,99 @@ class QuotedInsurance(Base):
     travel_request: Mapped[TravelRequest] = relationship(back_populates="quoted_insurance")
     created_by: Mapped[User] = relationship(foreign_keys=[created_by_id])
     updated_by: Mapped[User] = relationship(foreign_keys=[updated_by_id])
+
+
+class RequestWorkflow(Base):
+    __tablename__ = "request_workflows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    travel_request_id: Mapped[int] = mapped_column(ForeignKey("travel_requests.id"), nullable=False)
+    workflow_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="Active")
+    parent_workflow_id: Mapped[int | None] = mapped_column(ForeignKey("request_workflows.id"), nullable=True)
+    context: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    started_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    completed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    travel_request: Mapped[TravelRequest] = relationship(back_populates="request_workflows")
+    started_by: Mapped[User] = relationship(foreign_keys=[started_by_id])
+    completed_by: Mapped[User] = relationship(foreign_keys=[completed_by_id])
+    parent_workflow: Mapped["RequestWorkflow | None"] = relationship(
+        remote_side="RequestWorkflow.id",
+        foreign_keys=[parent_workflow_id],
+    )
+    tasks: Mapped[list["RequestTask"]] = relationship(
+        back_populates="workflow",
+        cascade="all, delete-orphan",
+        order_by="RequestTask.sort_order.asc()",
+    )
+
+
+class RequestTask(Base):
+    __tablename__ = "request_tasks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    request_workflow_id: Mapped[int] = mapped_column(ForeignKey("request_workflows.id"), nullable=False)
+    travel_request_id: Mapped[int] = mapped_column(ForeignKey("travel_requests.id"), nullable=False)
+    task_key: Mapped[str] = mapped_column(String(80), nullable=False)
+    title: Mapped[str] = mapped_column(String(160), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="Open")
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    due_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    completed_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    workflow: Mapped[RequestWorkflow] = relationship(back_populates="tasks")
+    travel_request: Mapped[TravelRequest] = relationship()
+    completed_by: Mapped[User | None] = relationship(foreign_keys=[completed_by_id])
+
+
+class RequestCommunication(Base):
+    __tablename__ = "request_communications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    travel_request_id: Mapped[int] = mapped_column(ForeignKey("travel_requests.id"), nullable=False)
+    request_workflow_id: Mapped[int | None] = mapped_column(ForeignKey("request_workflows.id"), nullable=True)
+    communication_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="Draft")
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    updated_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    travel_request: Mapped[TravelRequest] = relationship(back_populates="request_communications")
+    workflow: Mapped[RequestWorkflow | None] = relationship()
+    created_by: Mapped[User] = relationship(foreign_keys=[created_by_id])
+    updated_by: Mapped[User] = relationship(foreign_keys=[updated_by_id])
+
+
+class RequestResearchDocument(Base):
+    __tablename__ = "request_research_documents"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    travel_request_id: Mapped[int] = mapped_column(ForeignKey("travel_requests.id"), nullable=False)
+    original_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    stored_path: Mapped[str] = mapped_column(String(500), nullable=False)
+    mime_type: Mapped[str] = mapped_column(String(120), nullable=False)
+    size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    travel_request: Mapped[TravelRequest] = relationship(back_populates="research_documents")
+    uploaded_by: Mapped[User] = relationship(foreign_keys=[uploaded_by_id])

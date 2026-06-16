@@ -147,3 +147,35 @@ export const QUOTED_INSURANCE_STATUSES = [
   QUOTED_INSURANCE_STATUS_DECLINED,
   QUOTED_INSURANCE_STATUS_ACCEPTED,
 ] as const;
+
+export const WORKFLOW_TYPE_RESEARCH = "research";
+export const WORKFLOW_TYPE_COMMUNICATE_RESEARCH = "communicate_research";
+export const WORKFLOW_TYPE_ENTER_TRIP_CRM = "enter_trip_crm";
+
+export const WORKFLOW_STATUS_ACTIVE = "Active";
+export const WORKFLOW_STATUS_COMPLETED = "Completed";
+export const WORKFLOW_STATUS_CANCELLED = "Cancelled";
+
+export const TASK_STATUS_OPEN = "Open";
+export const TASK_STATUS_DONE = "Done";
+export const TASK_DISPLAY_STATUS_LATE = "Late";
+
+export const FOLLOW_UP_DUE_DAYS = 3;
+
+export const TASK_KEY_RESEARCH_CRUISE_OPTIONS = "research_cruise_options";
+export const TASK_KEY_UPLOAD_RESEARCH_DOCUMENT = "upload_research_document";
+export const TASK_KEY_CREATE_PROPOSED_CRUISES = "create_proposed_cruises";
+export const TASK_KEY_DRAFT_RESEARCH_COMMUNICATION = "draft_research_communication";
+export const TASK_KEY_SEND_RESEARCH_COMMUNICATION = "send_research_communication";
+export const TASK_KEY_FOLLOW_UP_RESEARCH = "follow_up_research";
+export const TASK_KEY_CLIENT_RESPONSE = "client_response";
+
+export const COMMUNICATION_STATUS_DRAFT = "Draft";
+export const COMMUNICATION_STATUS_SENT = "Sent";
+export const COMMUNICATION_STATUS_ARCHIVED = "Archived";
+
+export const COMMUNICATION_TYPE_RESEARCH_FINDINGS = "research_findings";
+export const COMMUNICATION_TYPE_RESEARCH_PROPOSAL = "research_proposal";
+export const COMMUNICATION_TYPE_RESEARCH_FOLLOW_UP = "research_follow_up";
+export const COMMUNICATION_TYPE_BOOKING = "booking_confirmation";
+export const COMMUNICATION_TYPE_AGENCY = "agency_follow_up";

@@ -7,13 +7,18 @@ import {
 type CloseReasonPickerProps = {
   value: string;
   onChange: (value: string) => void;
+  includePrimaryReason?: boolean;
 };
 
 function reasonClassName(reason: string): string {
   return reason === PRIMARY_CLOSE_REASON ? "close-reason-success" : "close-reason-negative";
 }
 
-export default function CloseReasonPicker({ value, onChange }: CloseReasonPickerProps) {
+export default function CloseReasonPicker({
+  value,
+  onChange,
+  includePrimaryReason = true,
+}: CloseReasonPickerProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -55,18 +60,22 @@ export default function CloseReasonPicker({ value, onChange }: CloseReasonPicker
 
       {open ? (
         <div className="close-reason-dropdown-menu" role="listbox" aria-label="Close reason">
-          <button
-            type="button"
-            role="option"
-            aria-selected={value === PRIMARY_CLOSE_REASON}
-            className={`close-reason-dropdown-option ${reasonClassName(PRIMARY_CLOSE_REASON)} ${
-              value === PRIMARY_CLOSE_REASON ? "selected" : ""
-            }`}
-            onClick={() => selectReason(PRIMARY_CLOSE_REASON)}
-          >
-            {PRIMARY_CLOSE_REASON}
-          </button>
-          <hr className="close-reason-divider" />
+          {includePrimaryReason ? (
+            <>
+              <button
+                type="button"
+                role="option"
+                aria-selected={value === PRIMARY_CLOSE_REASON}
+                className={`close-reason-dropdown-option ${reasonClassName(PRIMARY_CLOSE_REASON)} ${
+                  value === PRIMARY_CLOSE_REASON ? "selected" : ""
+                }`}
+                onClick={() => selectReason(PRIMARY_CLOSE_REASON)}
+              >
+                {PRIMARY_CLOSE_REASON}
+              </button>
+              <hr className="close-reason-divider" />
+            </>
+          ) : null}
           {OTHER_CLOSE_REASONS.map((reason) => (
             <button
               key={reason}

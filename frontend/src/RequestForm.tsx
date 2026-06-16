@@ -20,6 +20,7 @@ type RequestFormProps = {
   showCloseButton?: boolean;
   onCloseClick?: () => void;
   showPrimaryPassengerDob?: boolean;
+  onFindExistingClient?: () => void;
   formId?: string;
   hideActions?: boolean;
 };
@@ -38,9 +39,18 @@ export default function RequestForm({
   showCloseButton = false,
   onCloseClick,
   showPrimaryPassengerDob = false,
+  onFindExistingClient,
   formId,
   hideActions = false,
 }: RequestFormProps) {
+  function patchForm(patch: Partial<TravelRequestInput>, clearLinkedPassenger = false) {
+    setForm({
+      ...form,
+      ...patch,
+      ...(clearLinkedPassenger ? { primary_passenger_id: undefined } : {}),
+    });
+  }
+
   function updateDestination(destination: string) {
     setForm({
       ...form,
@@ -62,6 +72,25 @@ export default function RequestForm({
 
   return (
     <form id={formId} onSubmit={onSubmit}>
+      {showPrimaryPassengerDob && onFindExistingClient ? (
+        <div className="requestor-picker">
+          <button type="button" className="modal-secondary" disabled={disabled} onClick={onFindExistingClient}>
+            Find existing client
+          </button>
+          {form.primary_passenger_id ? (
+            <p className="field-hint">
+              Linked to an existing passenger record. Edit the requestor contact fields below to enter someone new
+              instead.
+            </p>
+          ) : (
+            <p className="field-hint">
+              The requestor is always the primary passenger. Search for a returning client or enter new contact details
+              below.
+            </p>
+          )}
+        </div>
+      ) : null}
+
       <div className="field-row">
         <label>
           First name
@@ -69,7 +98,7 @@ export default function RequestForm({
             required
             disabled={disabled}
             value={form.first_name}
-            onChange={(event) => setForm({ ...form, first_name: event.target.value })}
+            onChange={(event) => patchForm({ first_name: event.target.value }, true)}
           />
         </label>
 
@@ -79,7 +108,7 @@ export default function RequestForm({
             required
             disabled={disabled}
             value={form.last_name}
-            onChange={(event) => setForm({ ...form, last_name: event.target.value })}
+            onChange={(event) => patchForm({ last_name: event.target.value }, true)}
           />
         </label>
       </div>
@@ -91,7 +120,7 @@ export default function RequestForm({
           disabled={disabled}
           type="email"
           value={form.email}
-          onChange={(event) => setForm({ ...form, email: event.target.value })}
+          onChange={(event) => patchForm({ email: event.target.value }, true)}
         />
       </label>
 
@@ -102,7 +131,7 @@ export default function RequestForm({
           disabled={disabled}
           type="tel"
           value={form.phone}
-          onChange={(event) => setForm({ ...form, phone: event.target.value })}
+          onChange={(event) => patchForm({ phone: event.target.value }, true)}
         />
       </label>
 

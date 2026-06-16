@@ -163,6 +163,20 @@ class TravelRequestBase(BaseModel):
 
 class TravelRequestCreate(TravelRequestBase):
     first_passenger_date_of_birth: date | None = None
+    primary_passenger_id: int | None = None
+
+
+class PassengerRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    first_name: str
+    last_name: str
+    email: EmailStr
+    phone: str
+    date_of_birth: date | None = None
+    created_at: datetime
+    updated_at: datetime
 
 
 class RequestPassengerBase(BaseModel):
@@ -173,8 +187,41 @@ class RequestPassengerBase(BaseModel):
     date_of_birth: date | None = None
 
 
-class RequestPassengerCreate(RequestPassengerBase):
-    pass
+class RequestPassengerCreate(BaseModel):
+    passenger_id: int | None = None
+    first_name: str | None = Field(default=None, min_length=1, max_length=80)
+    last_name: str | None = Field(default=None, min_length=1, max_length=80)
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, min_length=7, max_length=30)
+    date_of_birth: date | None = None
+
+    @model_validator(mode="after")
+    def validate_create_mode(self) -> "RequestPassengerCreate":
+        profile_fields = (
+            self.first_name,
+            self.last_name,
+            self.email,
+            self.phone,
+            self.date_of_birth,
+        )
+        if self.passenger_id is not None:
+            if any(value is not None for value in profile_fields):
+                raise ValueError("Provide either passenger_id or passenger details, not both.")
+            return self
+
+        missing = [
+            name
+            for name, value in (
+                ("first_name", self.first_name),
+                ("last_name", self.last_name),
+                ("email", self.email),
+                ("phone", self.phone),
+            )
+            if value is None or (isinstance(value, str) and not value.strip())
+        ]
+        if missing:
+            raise ValueError("New passengers require first name, last name, email, and phone.")
+        return self
 
 
 class RequestPassengerUpdate(BaseModel):
@@ -189,6 +236,8 @@ class RequestPassengerRead(RequestPassengerBase):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    passenger_id: int
+    is_primary: bool
     created_at: datetime
     updated_at: datetime
 
@@ -298,6 +347,17 @@ class RequestNoteRead(BaseModel):
     audits: list[RequestNoteAuditRead] = Field(default_factory=list)
 
 
+class RequestNoteSummaryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    summary: str
+    created_by: UserAudit
+    updated_by: UserAudit
+    created_at: datetime
+    updated_at: datetime
+
+
 class NamedInclude(BaseModel):
     included: bool = False
     name: str | None = None
@@ -346,6 +406,21 @@ class ProposedCruiseBase(BaseModel):
 
 class ProposedCruiseCreate(ProposedCruiseBase):
     pass
+
+
+class GenerateProposedCruisesRequest(BaseModel):
+    research_document_id: int
+
+
+class GenerateProposedCruisesResponse(BaseModel):
+    research_document_id: int
+    research_document_filename: str
+    model: str
+    cruises: list[ProposedCruiseCreate]
+
+
+class BulkProposedCruiseCreate(BaseModel):
+    cruises: list[ProposedCruiseCreate] = Field(min_length=1)
 
 
 class ProposedCruiseUpdate(BaseModel):
@@ -403,6 +478,10 @@ class ProposedCruiseRead(BaseModel):
         if isinstance(value, ProposedCruiseIncludes):
             return value
         return ProposedCruiseIncludes.model_validate(value or {})
+
+
+class BulkProposedCruiseCreateResponse(BaseModel):
+    cruises: list[ProposedCruiseRead]
 
 
 class QuotedInsuranceBase(BaseModel):
@@ -469,21 +548,229 @@ class TravelRequestRead(TravelRequestBase):
 
 
 class TravelRequestDetailRead(TravelRequestRead):
+    last_worked_at: datetime
+    last_worked_by: UserAudit
     request_passengers: list[RequestPassengerRead] = Field(default_factory=list)
-    request_notes: list[RequestNoteRead] = Field(default_factory=list)
-    request_audits: list[TravelRequestAuditRead] = Field(default_factory=list)
-    passenger_audits: list[RequestPassengerAuditRead] = Field(default_factory=list)
+    request_notes: list[RequestNoteSummaryRead] = Field(default_factory=list)
     call_transcripts: list[AttachmentRead] = Field(default_factory=list)
     chat_logs: list[AttachmentRead] = Field(default_factory=list)
     proposed_cruises: list[ProposedCruiseRead] = Field(default_factory=list)
     quoted_insurance: list[QuotedInsuranceRead] = Field(default_factory=list)
+    request_workflows: list["RequestWorkflowRead"] = Field(default_factory=list)
+    request_communications: list["RequestCommunicationSummaryRead"] = Field(default_factory=list)
+    research_documents: list["ResearchDocumentRead"] = Field(default_factory=list)
+
+
+class RequestChangeHistoryRead(BaseModel):
+    request_audits: list[TravelRequestAuditRead] = Field(default_factory=list)
+    passenger_audits: list[RequestPassengerAuditRead] = Field(default_factory=list)
+
+
+class RequestTaskRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    task_key: str
+    title: str
+    description: str | None = None
+    status: str
+    sort_order: int
+    due_at: datetime | None = None
+    completed_at: datetime | None = None
+    completed_by: UserAudit | None = None
+    result: dict | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class RequestWorkflowRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    workflow_type: str
+    status: str
+    parent_workflow_id: int | None = None
+    context: dict | None = None
+    started_by: UserAudit
+    completed_by: UserAudit | None = None
+    tasks: list[RequestTaskRead] = Field(default_factory=list)
+    created_at: datetime
+    updated_at: datetime
+    completed_at: datetime | None = None
+
+
+class RequestWorkflowCreate(BaseModel):
+    workflow_type: str = Field(min_length=1, max_length=40)
+    parent_workflow_id: int | None = None
+
+    @field_validator("workflow_type")
+    @classmethod
+    def validate_workflow_type(cls, value: str) -> str:
+        from app.constants import WORKFLOW_TYPES
+
+        if value not in WORKFLOW_TYPES:
+            raise ValueError("Invalid workflow type selected.")
+        return value
+
+
+class RequestWorkflowUpdate(BaseModel):
+    status: str | None = Field(default=None, min_length=1, max_length=40)
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str | None) -> str | None:
+        from app.constants import WORKFLOW_STATUSES
+
+        if value is not None and value not in WORKFLOW_STATUSES:
+            raise ValueError("Invalid workflow status selected.")
+        return value
+
+
+class RequestTaskUpdate(BaseModel):
+    status: str | None = Field(default=None, min_length=1, max_length=40)
+    due_at: datetime | None = None
+    result: dict | None = None
+    reached_out: bool | None = None
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str | None) -> str | None:
+        from app.constants import TASK_STATUSES
+
+        if value is not None and value not in TASK_STATUSES:
+            raise ValueError("Invalid task status selected.")
+        return value
+
+
+class RequestCommunicationCreate(BaseModel):
+    communication_type: str = Field(min_length=1, max_length=40)
+    subject: str = Field(min_length=1, max_length=255)
+    body: str = Field(min_length=1)
+    request_workflow_id: int | None = None
+    status: str = Field(default="Draft", min_length=1, max_length=40)
+
+    @field_validator("communication_type")
+    @classmethod
+    def validate_communication_type(cls, value: str) -> str:
+        from app.constants import COMMUNICATION_TYPES
+
+        if value not in COMMUNICATION_TYPES:
+            raise ValueError("Invalid communication type selected.")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        from app.constants import COMMUNICATION_STATUSES
+
+        if value not in COMMUNICATION_STATUSES:
+            raise ValueError("Invalid communication status selected.")
+        return value
+
+
+class RequestCommunicationUpdate(BaseModel):
+    communication_type: str | None = Field(default=None, min_length=1, max_length=40)
+    subject: str | None = Field(default=None, min_length=1, max_length=255)
+    body: str | None = Field(default=None, min_length=1)
+    status: str | None = Field(default=None, min_length=1, max_length=40)
+
+    @field_validator("communication_type")
+    @classmethod
+    def validate_communication_type(cls, value: str | None) -> str | None:
+        from app.constants import COMMUNICATION_TYPES
+
+        if value is not None and value not in COMMUNICATION_TYPES:
+            raise ValueError("Invalid communication type selected.")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str | None) -> str | None:
+        from app.constants import COMMUNICATION_STATUSES
+
+        if value is not None and value not in COMMUNICATION_STATUSES:
+            raise ValueError("Invalid communication status selected.")
+        return value
+
+
+class RequestCommunicationRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    communication_type: str
+    subject: str
+    body: str
+    status: str
+    request_workflow_id: int | None = None
+    sent_at: datetime | None = None
+    created_by: UserAudit
+    updated_by: UserAudit
+    created_at: datetime
+    updated_at: datetime
+
+
+class RequestCommunicationSummaryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    communication_type: str
+    subject: str
+    status: str
+    request_workflow_id: int | None = None
+    sent_at: datetime | None = None
+    created_by: UserAudit
+    updated_by: UserAudit
+    created_at: datetime
+    updated_at: datetime
+
+
+class GenerateResearchCommunicationRequest(BaseModel):
+    request_workflow_id: int | None = None
+
+
+class GenerateResearchCommunicationResponse(BaseModel):
+    model: str
+    proposed_cruise_count: int
+    subject: str
+    email_subject: str
+    body: str
+    communication: RequestCommunicationRead
+
+
+class ResearchDocumentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    original_filename: str
+    mime_type: str
+    size_bytes: int
+    uploaded_by: UserAudit
+    created_at: datetime
+
+
+class WorkflowTemplateRead(BaseModel):
+    workflow_type: str
+    name: str
+    description: str
+
+
+class DashboardNextOpenTaskRead(BaseModel):
+    id: int
+    task_key: str
+    title: str
+    workflow_type: str
+    workflow_name: str
 
 
 class DashboardOpenRequest(TravelRequestRead):
-    is_stale: bool
+    is_stale: bool = Field(description="True when last_worked_at is older than the stale threshold.")
+    next_open_task: DashboardNextOpenTaskRead | None = None
+    last_worked_at: datetime
+    last_worked_by: UserAudit
 
 
 class DashboardResponse(BaseModel):
     open_count: int
-    stale_count: int
+    stale_count: int = Field(description="Open requests whose last_worked_at is older than the stale threshold.")
+    closed_count: int = Field(description="Requests that have been closed.")
     open_requests: list[DashboardOpenRequest]

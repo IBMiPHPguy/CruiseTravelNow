@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 import { addQuotedInsurance, updateQuotedInsurance } from "./api";
 
 import QuotedInsuranceModal from "./QuotedInsuranceModal";
+
+import { QUOTED_INSURANCE_STATUS_ACCEPTED } from "./formOptions";
 
 import { formatMoney, quotedInsuranceStatusClass } from "./quotedInsuranceForm";
 
@@ -23,6 +25,8 @@ type QuotedInsuranceSectionProps = {
   onChanged: () => Promise<void>;
 
   onError: (message: string) => void;
+
+  embedded?: boolean;
 
 };
 
@@ -72,6 +76,8 @@ export default function QuotedInsuranceSection({
 
   onError,
 
+  embedded = false,
+
 }: QuotedInsuranceSectionProps) {
 
   const [modalOpen, setModalOpen] = useState(false);
@@ -79,6 +85,11 @@ export default function QuotedInsuranceSection({
   const [editingQuote, setEditingQuote] = useState<QuotedInsurance | null>(null);
 
   const [saving, setSaving] = useState(false);
+
+  const hasAcceptedQuote = useMemo(
+    () => quotes.some((quote) => quote.status === QUOTED_INSURANCE_STATUS_ACCEPTED),
+    [quotes],
+  );
 
 
 
@@ -140,118 +151,69 @@ export default function QuotedInsuranceSection({
 
 
 
-  return (
-
+  const body = (
     <>
+      {!disabled && !hasAcceptedQuote ? (
+        <button type="button" onClick={openCreateModal}>
+          Add insurance quote
+        </button>
+      ) : null}
 
-      <section className="section-card quoted-insurance-card">
+      <div className="quoted-insurance-list">
+        {quotes.length === 0 ? (
+          <p className="meta">No insurance quotes yet.</p>
+        ) : (
+          quotes.map((quote) => {
+            const declinedDate = declinedOnDate(quote);
 
-        <header className="section-card-header">
-
-          <h3>Quoted Insurance</h3>
-
-        </header>
-
-        <div className="section-card-body">
-
-          {!disabled ? (
-
-            <button type="button" onClick={openCreateModal}>
-
-              Add insurance quote
-
-            </button>
-
-          ) : null}
-
-
-
-          <div className="quoted-insurance-list">
-
-            {quotes.length === 0 ? (
-
-              <p className="meta">No insurance quotes yet.</p>
-
-            ) : (
-
-              quotes.map((quote) => {
-
-                const declinedDate = declinedOnDate(quote);
-
-
-
-                return (
-
-                  <article className="quoted-insurance-item" key={quote.id}>
-
-                    <div className="quoted-insurance-item-header">
-
-                      <div>
-
-                        <strong>
-
-                          {quote.carrier} · {quote.plan_name}
-
-                        </strong>
-
-                        <div className="meta">Premium {formatMoney(quote.premium_cost)}</div>
-
-                        <div className="meta">
-
-                          Cancellation {formatMoney(quote.cancellation_coverage)} · Medical{" "}
-
-                          {formatMoney(quote.medical_coverage)} · Evac{" "}
-
-                          {formatMoney(quote.medical_evac_coverage)}
-
-                        </div>
-
-                        {declinedDate ? (
-
-                          <div className="meta">Declined {formatDate(declinedDate)}</div>
-
-                        ) : null}
-
-                      </div>
-
-                      <div className="quoted-insurance-item-actions">
-
-                        <span className={`quote-status ${quotedInsuranceStatusClass(quote.status)}`}>
-
-                          {quote.status}
-
-                        </span>
-
-                        {!disabled ? (
-                            <button
-                              type="button"
-                              className="icon-button"
-                              aria-label={`Edit ${quote.carrier} ${quote.plan_name}`}
-                              onClick={() => openEditModal(quote)}
-                            >
-                              <EditIcon />
-                            </button>
-                        ) : null}
-
-                      </div>
-
+            return (
+              <article className="quoted-insurance-item" key={quote.id}>
+                <div className="quoted-insurance-item-header">
+                  <div>
+                    <strong>
+                      {quote.carrier} · {quote.plan_name}
+                    </strong>
+                    <div className="meta">Premium {formatMoney(quote.premium_cost)}</div>
+                    <div className="meta">
+                      Cancellation {formatMoney(quote.cancellation_coverage)} · Medical{" "}
+                      {formatMoney(quote.medical_coverage)} · Evac {formatMoney(quote.medical_evac_coverage)}
                     </div>
+                    {declinedDate ? <div className="meta">Declined {formatDate(declinedDate)}</div> : null}
+                  </div>
+                  <div className="quoted-insurance-item-actions">
+                    <span className={`quote-status ${quotedInsuranceStatusClass(quote.status)}`}>{quote.status}</span>
+                    {!disabled ? (
+                      <button
+                        type="button"
+                        className="icon-button"
+                        aria-label={`Edit ${quote.carrier} ${quote.plan_name}`}
+                        onClick={() => openEditModal(quote)}
+                      >
+                        <EditIcon />
+                      </button>
+                    ) : null}
+                  </div>
+                </div>
+              </article>
+            );
+          })
+        )}
+      </div>
+    </>
+  );
 
-                  </article>
-
-                );
-
-              })
-
-            )}
-
-          </div>
-
-        </div>
-
-      </section>
-
-
+  return (
+    <>
+      {embedded ? (
+        body
+      ) : (
+        <section className="section-card quoted-insurance-card">
+          <header className="section-card-header">
+            <h3>Quoted Insurance</h3>
+          </header>
+          <div className="section-card-body">{body}</div>
+        </section>
+      )}
 
       <QuotedInsuranceModal
 

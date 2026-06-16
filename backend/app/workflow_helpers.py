@@ -1,0 +1,218 @@
+from dataclasses import dataclass
+from datetime import datetime, timedelta
+
+from app.constants import (
+    TASK_STATUS_DONE,
+    TASK_STATUS_OPEN,
+    WORKFLOW_TYPE_COMMUNICATE_RESEARCH,
+    WORKFLOW_TYPE_ENTER_TRIP_CRM,
+    WORKFLOW_TYPE_RESEARCH,
+)
+
+FOLLOW_UP_DUE_DAYS = 3
+
+TASK_KEY_SEND_RESEARCH_COMMUNICATION = "send_research_communication"
+TASK_KEY_FOLLOW_UP_RESEARCH = "follow_up_research"
+TASK_KEY_CLIENT_RESPONSE = "client_response"
+
+COMMUNICATE_RESEARCH_PREREQUISITE_KEYS: dict[str, tuple[str, ...]] = {
+    TASK_KEY_FOLLOW_UP_RESEARCH: (TASK_KEY_SEND_RESEARCH_COMMUNICATION,),
+    TASK_KEY_CLIENT_RESPONSE: (TASK_KEY_SEND_RESEARCH_COMMUNICATION,),
+}
+
+WORKFLOW_SUCCESSORS: dict[str, str] = {
+    WORKFLOW_TYPE_RESEARCH: WORKFLOW_TYPE_COMMUNICATE_RESEARCH,
+}
+
+
+@dataclass(frozen=True)
+class WorkflowTaskTemplate:
+    task_key: str
+    title: str
+    description: str
+    sort_order: int
+
+
+WORKFLOW_DEFINITIONS: dict[str, dict[str, str]] = {
+    WORKFLOW_TYPE_RESEARCH: {
+        "name": "Research",
+        "description": "Research cruise options, upload findings, and draft client communication.",
+    },
+    WORKFLOW_TYPE_COMMUNICATE_RESEARCH: {
+        "name": "Communicate Research",
+        "description": "Send research findings to the client and track follow-up and response.",
+    },
+    WORKFLOW_TYPE_ENTER_TRIP_CRM: {
+        "name": "Enter Trip in CRM",
+        "description": "Verify passenger details and complete CRM booking checklist.",
+    },
+}
+
+WORKFLOW_TASK_TEMPLATES: dict[str, list[WorkflowTaskTemplate]] = {
+    WORKFLOW_TYPE_RESEARCH: [
+        WorkflowTaskTemplate(
+            "research_cruise_options",
+            "Research cruise options",
+            "Research cruise options for this request.",
+            1,
+        ),
+        WorkflowTaskTemplate(
+            "upload_research_document",
+            "Upload research document",
+            "Upload the text research document created for this request.",
+            2,
+        ),
+        WorkflowTaskTemplate(
+            "create_proposed_cruises",
+            "Create proposed cruises",
+            "Add proposed cruises based on the research findings.",
+            3,
+        ),
+        WorkflowTaskTemplate(
+            "draft_research_communication",
+            "Draft research communication",
+            "Create the client communication summarizing the research findings.",
+            4,
+        ),
+    ],
+    WORKFLOW_TYPE_COMMUNICATE_RESEARCH: [
+        WorkflowTaskTemplate(
+            "send_research_communication",
+            "Send research communication",
+            "Send the research communication to the client and mark it as sent.",
+            1,
+        ),
+        WorkflowTaskTemplate(
+            "follow_up_research",
+            "Follow up on research communication",
+            "Follow up with the client three days after the research communication was sent.",
+            2,
+        ),
+        WorkflowTaskTemplate(
+            "client_response",
+            "Record client response",
+            "Record whether the client accepted a proposed cruise, rejected all options, or needs more research.",
+            3,
+        ),
+    ],
+    WORKFLOW_TYPE_ENTER_TRIP_CRM: [
+        WorkflowTaskTemplate(
+            "verify_dates_of_birth",
+            "Verify dates of birth",
+            "Verify passenger dates of birth.",
+            1,
+        ),
+        WorkflowTaskTemplate(
+            "verify_names_spellings",
+            "Verify names and spellings",
+            "Verify passenger names and spellings.",
+            2,
+        ),
+        WorkflowTaskTemplate(
+            "verify_email_phone",
+            "Verify email and phone numbers",
+            "Verify passenger contact information.",
+            3,
+        ),
+        WorkflowTaskTemplate(
+            "collect_lead_passenger_addresses",
+            "Collect lead passenger addresses",
+            "Collect the home address of the lead passenger for each room.",
+            4,
+        ),
+        WorkflowTaskTemplate(
+            "create_trip_in_crm",
+            "Create trip in CRM",
+            "Create the trip in the agency CRM (manual checklist).",
+            5,
+        ),
+        WorkflowTaskTemplate(
+            "collect_deposit_or_final_payment",
+            "Collect deposit or final payment",
+            "Collect deposit or final payment if the booking requires immediate payment.",
+            6,
+        ),
+        WorkflowTaskTemplate(
+            "send_cruise_line_booking_communication",
+            "Send cruise line booking communication",
+            "Send the cruise line booking communication to the client.",
+            7,
+        ),
+        WorkflowTaskTemplate(
+            "send_agency_crm_communication",
+            "Send agency CRM communication",
+            "Send the travel agency CRM communication to the client.",
+            8,
+        ),
+        WorkflowTaskTemplate(
+            "setup_crm_final_payment_followups",
+            "Set up CRM final payment follow-ups",
+            "Set up CRM follow-up tasks for final payment.",
+            9,
+        ),
+        WorkflowTaskTemplate(
+            "record_promised_obc",
+            "Record promised OBC",
+            "Record any promised onboard credit on the accepted proposed cruise.",
+            10,
+        ),
+    ],
+}
+
+
+def get_workflow_label(workflow_type: str) -> str:
+    return WORKFLOW_DEFINITIONS.get(workflow_type, {}).get("name", workflow_type)
+
+
+def get_task_templates(workflow_type: str) -> list[WorkflowTaskTemplate]:
+    return WORKFLOW_TASK_TEMPLATES.get(workflow_type, [])
+
+
+def get_successor_workflow_type(workflow_type: str) -> str | None:
+    return WORKFLOW_SUCCESSORS.get(workflow_type)
+
+
+def _task_by_key(tasks: list, task_key: str):
+    return next((task for task in tasks if task.task_key == task_key), None)
+
+
+def schedule_follow_up_due_date(workflow, send_completed_at: datetime) -> None:
+    if workflow.workflow_type != WORKFLOW_TYPE_COMMUNICATE_RESEARCH:
+        return
+
+    follow_up = _task_by_key(workflow.tasks, TASK_KEY_FOLLOW_UP_RESEARCH)
+    if follow_up is None or follow_up.status != TASK_STATUS_OPEN:
+        return
+
+    follow_up.due_at = send_completed_at + timedelta(days=FOLLOW_UP_DUE_DAYS)
+
+
+def ensure_follow_up_due_date(workflow) -> None:
+    if workflow.workflow_type != WORKFLOW_TYPE_COMMUNICATE_RESEARCH:
+        return
+
+    send_task = _task_by_key(workflow.tasks, TASK_KEY_SEND_RESEARCH_COMMUNICATION)
+    follow_up = _task_by_key(workflow.tasks, TASK_KEY_FOLLOW_UP_RESEARCH)
+    if send_task is None or follow_up is None:
+        return
+    if send_task.status != TASK_STATUS_DONE or follow_up.status != TASK_STATUS_OPEN or follow_up.due_at is not None:
+        return
+    if send_task.completed_at is None:
+        return
+
+    follow_up.due_at = send_task.completed_at + timedelta(days=FOLLOW_UP_DUE_DAYS)
+
+
+def record_follow_up_reached_out(task, *, now: datetime) -> None:
+    if task.task_key != TASK_KEY_FOLLOW_UP_RESEARCH:
+        raise ValueError("Reached out can only be recorded on follow-up tasks.")
+    if task.status != TASK_STATUS_OPEN:
+        raise ValueError("Reached out can only be recorded on open tasks.")
+
+    result = dict(task.result or {})
+    history = list(result.get("reached_out_history", []))
+    history.append(now.isoformat())
+    result["reached_out_history"] = history
+    result["last_reached_out_at"] = now.isoformat()
+    task.result = result
+    task.due_at = now + timedelta(days=FOLLOW_UP_DUE_DAYS)

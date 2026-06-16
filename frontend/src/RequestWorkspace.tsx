@@ -1,14 +1,14 @@
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { fetchRequest, updateRequest, uploadChatLog, uploadTranscript } from "./api";
-import AttachmentsSection from "./AttachmentsSection";
-import ChangeHistorySection from "./ChangeHistorySection";
+import RequestClientContentSection from "./RequestClientContentSection";
+import RequestHistorySection from "./RequestHistorySection";
+import RequestNotesResearchSection from "./RequestNotesResearchSection";
+import RequestProposalsSection from "./RequestProposalsSection";
 import CloseRequestModal from "./CloseRequestModal";
-import NotesSection from "./NotesSection";
 import PassengersSection from "./PassengersSection";
-import ProposedCruisesSection from "./ProposedCruisesSection";
-import QuotedInsuranceSection from "./QuotedInsuranceSection";
 import RequestForm, { emptyRequestForm, isReturnAfterDeparture } from "./RequestForm";
-import { REQUEST_STATUS_CLOSED } from "./formOptions";
+import WorkflowsSection from "./WorkflowsSection";
+import { useClientContentFullWidth } from "./useClientContentFullWidth";import { REQUEST_STATUS_CLOSED } from "./formOptions";
 import type { TravelRequestDetail, TravelRequestInput } from "./types";
 import { formatDestinationSummary, formatTimestamp } from "./utils";
 
@@ -67,11 +67,25 @@ export default function RequestWorkspace({ requestId, onBack, onClosed }: Reques
   const [uploadingChat, setUploadingChat] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
+  const mainRef = useRef<HTMLDivElement>(null);
+  const sidebarTopRef = useRef<HTMLDivElement>(null);
+  const sidebarRef = useRef<HTMLDivElement>(null);
+  const clientContentRef = useRef<HTMLDivElement>(null);
+  const clientContentExpanded = useClientContentFullWidth(
+    mainRef,
+    sidebarTopRef,
+    sidebarRef,
+    clientContentRef,
+    Boolean(request && !loading),
+  );
 
   const isClosed = request?.status === REQUEST_STATUS_CLOSED;
 
-  async function loadRequest() {
-    setLoading(true);
+  async function loadRequest(options?: { silent?: boolean }) {
+    const silent = options?.silent ?? false;
+    if (!silent) {
+      setLoading(true);
+    }
     setError("");
     try {
       const data = await fetchRequest(requestId);
@@ -80,8 +94,14 @@ export default function RequestWorkspace({ requestId, onBack, onClosed }: Reques
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Unable to load request.");
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
+  }
+
+  async function refreshRequest() {
+    await loadRequest({ silent: true });
   }
 
   useEffect(() => {
@@ -162,7 +182,7 @@ export default function RequestWorkspace({ requestId, onBack, onClosed }: Reques
     setError("");
     try {
       await uploadTranscript(requestId, file);
-      await loadRequest();
+      await refreshRequest();
       setMessage("Call transcript uploaded.");
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Unable to upload transcript.");
@@ -176,7 +196,7 @@ export default function RequestWorkspace({ requestId, onBack, onClosed }: Reques
     setError("");
     try {
       await uploadChatLog(requestId, file);
-      await loadRequest();
+      await refreshRequest();
       setMessage("Chat log uploaded.");
     } catch (uploadError) {
       setError(uploadError instanceof Error ? uploadError.message : "Unable to upload chat log.");
@@ -243,9 +263,9 @@ export default function RequestWorkspace({ requestId, onBack, onClosed }: Reques
             </dd>
           </div>
           <div className="request-summary-detail">
-            <dt>Last updated</dt>
+            <dt>Last worked</dt>
             <dd>
-              {request.updated_by.username} · {formatTimestamp(request.updated_at)}
+              {request.last_worked_by.username} · {formatTimestamp(request.last_worked_at)}
             </dd>
           </div>
           {request.close_reason ? (
@@ -257,8 +277,10 @@ export default function RequestWorkspace({ requestId, onBack, onClosed }: Reques
         </dl>
       </section>
 
-      <div className="workspace-grid">
-        <div className="workspace-main">
+      <div
+        className={`workspace-grid${clientContentExpanded ? " is-client-expanded" : ""}`}
+      >
+        <div className="workspace-main" ref={mainRef}>
           <section className="section-card">
             <header className="section-card-header">
               <h3>Request Details</h3>
@@ -276,66 +298,73 @@ export default function RequestWorkspace({ requestId, onBack, onClosed }: Reques
               />
             </div>
           </section>
-
-          <PassengersSection
-            requestId={requestId}
-            passengers={request.request_passengers}
-            disabled={isClosed}
-            onChanged={loadRequest}
-            onError={setError}
-          />
-
-          <NotesSection
-            requestId={requestId}
-            notes={request.request_notes}
-            disabled={isClosed}
-            onChanged={loadRequest}
-            onError={setError}
-          />
-
-          <ChangeHistorySection
-            requestAudits={request.request_audits}
-            passengerAudits={request.passenger_audits}
-            passengers={request.request_passengers}
-          />
         </div>
 
-        <div className="attachment-stack">
-          <AttachmentsSection
-            title="Call Transcripts"
-            kind="transcripts"
-            requestId={requestId}
-            items={request.call_transcripts}
-            disabled={isClosed}
-            uploading={uploadingTranscript}
-            onUpload={handleUploadTranscript}
-          />
-          <AttachmentsSection
-            title="Chat Logs"
-            kind="chats"
-            requestId={requestId}
-            items={request.chat_logs}
-            disabled={isClosed}
-            uploading={uploadingChat}
-            onUpload={handleUploadChat}
-          />
-          <ProposedCruisesSection
-            requestId={requestId}
-            cruises={request.proposed_cruises}
-            passengers={request.request_passengers}
-            disabled={isClosed}
-            onChanged={loadRequest}
-            onError={setError}
-          />
-          <QuotedInsuranceSection
-            requestId={requestId}
-            quotes={request.quoted_insurance}
-            disabled={isClosed}
-            onChanged={loadRequest}
-            onError={setError}
-          />
+        <div className="workspace-sidebar" ref={sidebarRef}>
+          <div className="workspace-sidebar-top" ref={sidebarTopRef}>
+            <PassengersSection
+              requestId={requestId}
+              passengers={request.request_passengers}
+              disabled={isClosed}
+              onChanged={refreshRequest}
+              onError={setError}
+            />
+            <RequestProposalsSection
+              requestId={requestId}
+              cruises={request.proposed_cruises}
+              quotes={request.quoted_insurance}
+              passengers={request.request_passengers}
+              disabled={isClosed}
+              onChanged={refreshRequest}
+              onError={setError}
+            />
+          </div>
+          <div className="workspace-client-content" ref={clientContentRef}>
+            <RequestClientContentSection
+              requestId={requestId}
+              callTranscripts={request.call_transcripts}
+              chatLogs={request.chat_logs}
+              communications={request.request_communications}
+              workflows={request.request_workflows}
+              disabled={isClosed}
+              uploadingTranscript={uploadingTranscript}
+              uploadingChat={uploadingChat}
+              onUploadTranscript={handleUploadTranscript}
+              onUploadChat={handleUploadChat}
+              onChanged={refreshRequest}
+              onError={setError}
+            />
+          </div>
         </div>
       </div>
+
+      <div className="workspace-full-width">
+        <WorkflowsSection
+          requestId={requestId}
+          request={request}
+          form={form}
+          workflows={request.request_workflows}
+          disabled={isClosed}
+          onChanged={refreshRequest}
+          onError={setError}
+          onCloseRequest={handleCloseRequest}
+        />
+      </div>
+
+      <RequestNotesResearchSection
+        requestId={requestId}
+        notes={request.request_notes}
+        researchDocuments={request.research_documents}
+        disabled={isClosed}
+        onChanged={refreshRequest}
+        onError={setError}
+      />
+
+      <RequestHistorySection
+        requestId={requestId}
+        passengers={request.request_passengers}
+        workflows={request.request_workflows}
+      />
 
       {message ? <p className="status success">{message}</p> : null}
       {error ? <p className="status error">{error}</p> : null}

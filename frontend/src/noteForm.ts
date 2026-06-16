@@ -27,7 +27,7 @@ export function noteToForm(note: RequestNote): RequestNoteInput {
   };
 }
 
-export function isNoteModified(note: RequestNote): boolean {
+export function isNoteModified(note: Pick<RequestNote, "created_at" | "updated_at" | "created_by" | "updated_by">): boolean {
   return note.updated_at !== note.created_at || note.created_by.id !== note.updated_by.id;
 }
 

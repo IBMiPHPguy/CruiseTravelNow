@@ -13,6 +13,7 @@ type AttachmentsSectionProps = {
   disabled: boolean;
   uploading: boolean;
   onUpload: (file: File) => Promise<void>;
+  embedded?: boolean;
 };
 
 function UploadIcon() {
@@ -51,6 +52,7 @@ export default function AttachmentsSection({
   disabled,
   uploading,
   onUpload,
+  embedded = false,
 }: AttachmentsSectionProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragOver, setDragOver] = useState(false);
@@ -74,14 +76,9 @@ export default function AttachmentsSection({
 
   const singularLabel = title.endsWith("s") ? title.slice(0, -1) : title;
 
-  return (
+  const body = (
     <>
-      <section className="section-card attachment-card">
-        <header className="section-card-header">
-          <h3>{title}</h3>
-        </header>
-        <div className="section-card-body">
-          {!disabled ? (
+      {!disabled ? (
             <div
               className={`attachment-dropzone${dragOver ? " is-dragover" : ""}${
                 uploading ? " is-uploading" : ""
@@ -184,8 +181,21 @@ export default function AttachmentsSection({
               ))
             )}
           </div>
-        </div>
-      </section>
+    </>
+  );
+
+  return (
+    <>
+      {embedded ? (
+        body
+      ) : (
+        <section className="section-card attachment-card">
+          <header className="section-card-header">
+            <h3>{title}</h3>
+          </header>
+          <div className="section-card-body">{body}</div>
+        </section>
+      )}
 
       <AttachmentReaderModal
         open={viewingAttachment !== null}

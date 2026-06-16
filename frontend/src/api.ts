@@ -11,10 +11,19 @@ import type {
   TravelRequestDetail,
   TravelRequestInput,
   TravelRequestUpdateInput,
+  PassengerProfile,
   ProposedCruise,
   ProposedCruiseInput,
+  GeneratedProposedCruisesResponse,
+  GeneratedResearchCommunicationResponse,
   QuotedInsurance,
   QuotedInsuranceInput,
+  RequestCommunication,
+  RequestCommunicationInput,
+  RequestChangeHistory,
+  RequestWorkflow,
+  ResearchDocument,
+  WorkflowTemplate,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
@@ -52,12 +61,76 @@ export async function fetchRequests(): Promise<TravelRequest[]> {
   return response.json();
 }
 
+export async function fetchClosedRequests(): Promise<TravelRequest[]> {
+  const response = await fetch(`${API_BASE}/requests/closed`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to load closed requests."));
+  }
+  return response.json();
+}
+
+export async function reopenRequest(requestId: number): Promise<TravelRequest> {
+  const response = await fetch(`${API_BASE}/requests/${requestId}/reopen`, {
+    method: "POST",
+    headers: authHeaders(true),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to reopen request."));
+  }
+  return response.json();
+}
+
 export async function fetchRequest(requestId: number): Promise<TravelRequestDetail> {
   const response = await fetch(`${API_BASE}/requests/${requestId}`, {
     headers: authHeaders(),
   });
   if (!response.ok) {
     throw new Error(await parseError(response, "Unable to load travel request."));
+  }
+  return response.json();
+}
+
+export async function fetchRequestChangeHistory(requestId: number): Promise<RequestChangeHistory> {
+  const response = await fetch(`${API_BASE}/requests/${requestId}/change-history`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to load change history."));
+  }
+  return response.json();
+}
+
+export async function fetchRequestNotes(requestId: number): Promise<RequestNote[]> {
+  const response = await fetch(`${API_BASE}/requests/${requestId}/notes`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to load notes."));
+  }
+  return response.json();
+}
+
+export async function fetchNote(requestId: number, noteId: number): Promise<RequestNote> {
+  const response = await fetch(`${API_BASE}/requests/${requestId}/notes/${noteId}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to load note."));
+  }
+  return response.json();
+}
+
+export async function fetchCommunication(
+  requestId: number,
+  communicationId: number,
+): Promise<RequestCommunication> {
+  const response = await fetch(`${API_BASE}/requests/${requestId}/communications/${communicationId}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to load communication."));
   }
   return response.json();
 }
@@ -141,6 +214,22 @@ export async function fetchAttachmentContent(
   }
 
   return response.text();
+}
+
+export async function searchPassengers(query = "", limit = 20): Promise<PassengerProfile[]> {
+  const params = new URLSearchParams();
+  if (query.trim()) {
+    params.set("q", query.trim());
+  }
+  params.set("limit", String(limit));
+
+  const response = await fetch(`${API_BASE}/passengers/search?${params.toString()}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to search passengers."));
+  }
+  return response.json();
 }
 
 export async function addPassenger(
@@ -241,7 +330,7 @@ export async function addProposedCruise(
 export async function updateProposedCruise(
   requestId: number,
   cruiseId: number,
-  payload: ProposedCruiseInput,
+  payload: Partial<ProposedCruiseInput>,
 ): Promise<ProposedCruise> {
   const response = await fetch(`${API_BASE}/requests/${requestId}/proposed-cruises/${cruiseId}`, {
     method: "PATCH",
@@ -289,6 +378,175 @@ export async function updateQuotedInsurance(
   }
 
   return response.json();
+}
+
+export async function fetchWorkflowTemplates(): Promise<WorkflowTemplate[]> {
+  const response = await fetch(`${API_BASE}/workflow-templates`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to load workflow templates."));
+  }
+  return response.json();
+}
+
+export async function startWorkflow(
+  requestId: number,
+  workflowType: string,
+  parentWorkflowId?: number | null,
+): Promise<RequestWorkflow> {
+  const response = await fetch(`${API_BASE}/requests/${requestId}/workflows`, {
+    method: "POST",
+    headers: authHeaders(true),
+    body: JSON.stringify({
+      workflow_type: workflowType,
+      parent_workflow_id: parentWorkflowId ?? null,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to start workflow."));
+  }
+  return response.json();
+}
+
+export async function updateWorkflow(
+  requestId: number,
+  workflowId: number,
+  status: string,
+): Promise<RequestWorkflow> {
+  const response = await fetch(`${API_BASE}/requests/${requestId}/workflows/${workflowId}`, {
+    method: "PATCH",
+    headers: authHeaders(true),
+    body: JSON.stringify({ status }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to update workflow."));
+  }
+  return response.json();
+}
+
+export async function updateTask(
+  requestId: number,
+  taskId: number,
+  payload: {
+    status?: string;
+    due_at?: string | null;
+    result?: Record<string, unknown> | null;
+    reached_out?: boolean;
+  },
+): Promise<RequestWorkflow> {
+  const response = await fetch(`${API_BASE}/requests/${requestId}/tasks/${taskId}`, {
+    method: "PATCH",
+    headers: authHeaders(true),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to update task."));
+  }
+  return response.json();
+}
+
+export async function addCommunication(
+  requestId: number,
+  payload: RequestCommunicationInput,
+): Promise<RequestCommunication> {
+  const response = await fetch(`${API_BASE}/requests/${requestId}/communications`, {
+    method: "POST",
+    headers: authHeaders(true),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to save communication."));
+  }
+  return response.json();
+}
+
+export async function updateCommunication(
+  requestId: number,
+  communicationId: number,
+  payload: Partial<RequestCommunicationInput>,
+): Promise<RequestCommunication> {
+  const response = await fetch(`${API_BASE}/requests/${requestId}/communications/${communicationId}`, {
+    method: "PATCH",
+    headers: authHeaders(true),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to update communication."));
+  }
+  return response.json();
+}
+
+export async function uploadResearchDocument(requestId: number, file: File): Promise<ResearchDocument> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${API_BASE}/requests/${requestId}/research-documents`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: formData,
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to upload research document."));
+  }
+  return response.json();
+}
+
+export async function fetchResearchDocumentContent(requestId: number, documentId: number): Promise<string> {
+  const response = await fetch(
+    `${API_BASE}/requests/${requestId}/research-documents/${documentId}/content`,
+    { headers: authHeaders() },
+  );
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to load research document."));
+  }
+  return response.text();
+}
+
+export async function generateProposedCruisesFromResearch(
+  requestId: number,
+  researchDocumentId: number,
+): Promise<GeneratedProposedCruisesResponse> {
+  const response = await fetch(`${API_BASE}/requests/${requestId}/proposed-cruises/generate-from-research`, {
+    method: "POST",
+    headers: authHeaders(true),
+    body: JSON.stringify({ research_document_id: researchDocumentId }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to generate proposed cruises from research."));
+  }
+  return response.json();
+}
+
+export async function generateResearchCommunicationFromProposals(
+  requestId: number,
+  requestWorkflowId: number | null,
+): Promise<GeneratedResearchCommunicationResponse> {
+  const response = await fetch(`${API_BASE}/requests/${requestId}/communications/generate-from-proposals`, {
+    method: "POST",
+    headers: authHeaders(true),
+    body: JSON.stringify({ request_workflow_id: requestWorkflowId }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to generate proposal email."));
+  }
+  return response.json();
+}
+
+export async function addProposedCruisesBulk(
+  requestId: number,
+  cruises: ProposedCruiseInput[],
+): Promise<ProposedCruise[]> {
+  const response = await fetch(`${API_BASE}/requests/${requestId}/proposed-cruises/bulk`, {
+    method: "POST",
+    headers: authHeaders(true),
+    body: JSON.stringify({ cruises }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseError(response, "Unable to add proposed cruises."));
+  }
+  const payload = (await response.json()) as { cruises: ProposedCruise[] };
+  return payload.cruises;
 }
 
 export async function fetchHealth(): Promise<{ status: string; service: string }> {

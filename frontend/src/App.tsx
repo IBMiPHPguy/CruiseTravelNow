@@ -3,10 +3,13 @@ import { createRequest, fetchDashboard, fetchHealth } from "./api";
 import { fetchCurrentUser, logout } from "./authApi";
 import { getToken } from "./authStorage";
 import Dashboard from "./Dashboard";
+import ClosedRequestsPage from "./ClosedRequestsPage";
 import Login from "./Login";
+import PassengerPickerModal from "./PassengerPickerModal";
+import { toPassengerPayload } from "./PassengerFields";
 import RequestForm, { emptyRequestForm, isReturnAfterDeparture } from "./RequestForm";
 import RequestWorkspace from "./RequestWorkspace";
-import type { AppView, DashboardData, TravelRequestInput, User } from "./types";
+import type { AppView, DashboardData, PassengerProfile, RequestPassengerInput, TravelRequestInput, User } from "./types";
 import "./App.css";
 
 function App() {
@@ -20,6 +23,7 @@ function App() {
   const [error, setError] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [dashboardLoading, setDashboardLoading] = useState(false);
+  const [clientPickerOpen, setClientPickerOpen] = useState(false);
 
   async function loadDashboard() {
     setDashboardLoading(true);
@@ -108,6 +112,7 @@ function App() {
         ? form.destination_details
         : null,
       first_passenger_date_of_birth: form.first_passenger_date_of_birth?.trim() || undefined,
+      primary_passenger_id: form.primary_passenger_id,
     };
 
     try {
@@ -138,7 +143,7 @@ function App() {
   }
 
   return (
-    <main className="page">
+    <main className={`page${view.type === "edit" || view.type === "new" ? " page-workspace" : ""}`}>
       <section className="hero">
         <div className="hero-top">
           <div>
@@ -174,6 +179,11 @@ function App() {
               setError("");
               setView({ type: "edit", requestId });
             }}
+            onOpenClosedRequests={() => {
+              setMessage("");
+              setError("");
+              setView({ type: "closed" });
+            }}
           />
         ) : (
           <section className="card">
@@ -182,32 +192,98 @@ function App() {
         )
       ) : null}
 
+      {view.type === "closed" ? (
+        <ClosedRequestsPage
+          closedCount={dashboard?.closed_count ?? 0}
+          onBack={() => {
+            setView({ type: "dashboard" });
+            loadDashboard().catch(() => undefined);
+          }}
+          onOpenRequest={(requestId) => {
+            setMessage("");
+            setError("");
+            setView({ type: "edit", requestId });
+          }}
+          onReopened={() => {
+            loadDashboard().catch(() => undefined);
+          }}
+        />
+      ) : null}
+
       {view.type === "new" ? (
-        <section className="card">
-          <div className="workspace-header">
-            <button
-              type="button"
-              className="link-button"
-              onClick={() => {
-                setView({ type: "dashboard" });
-                loadDashboard().catch(() => undefined);
-              }}
-            >
-              Back to dashboard
-            </button>
-            <h2>New Cruise Request</h2>
-          </div>
-          <RequestForm
-            form={form}
-            setForm={setForm}
-            onSubmit={handleCreateRequest}
-            submitting={submitting}
-            submitLabel="Create Request"
-            showPrimaryPassengerDob
+        <div className="workspace">
+          <section className="request-summary-card">
+            <div className="request-summary-card-top">
+              <button
+                type="button"
+                className="back-button"
+                onClick={() => {
+                  setView({ type: "dashboard" });
+                  loadDashboard().catch(() => undefined);
+                }}
+              >
+                Back to dashboard
+              </button>
+              <span className="status-badge status-badge-open">New</span>
+            </div>
+
+            <div className="request-summary-card-main">
+              <h2>New Cruise Request</h2>
+              <p className="request-summary-client">Enter client and trip details to start intake.</p>
+            </div>
+          </section>
+
+          <section className="section-card">
+            <header className="section-card-header">
+              <h3>Request Details</h3>
+            </header>
+            <div className="section-card-body">
+              <RequestForm
+                form={form}
+                setForm={setForm}
+                onSubmit={handleCreateRequest}
+                submitting={submitting}
+                submitLabel="Create Request"
+                showPrimaryPassengerDob
+                onFindExistingClient={() => setClientPickerOpen(true)}
+              />
+            </div>
+          </section>
+
+          <PassengerPickerModal
+            open={clientPickerOpen}
+            title="Find existing client"
+            saving={false}
+            onClose={() => setClientPickerOpen(false)}
+            onAttachExisting={async (passenger: PassengerProfile) => {
+              setForm({
+                ...form,
+                first_name: passenger.first_name,
+                last_name: passenger.last_name,
+                email: passenger.email,
+                phone: passenger.phone,
+                primary_passenger_id: passenger.id,
+                first_passenger_date_of_birth: passenger.date_of_birth ?? "",
+              });
+              setClientPickerOpen(false);
+            }}
+            onCreateNew={async (payload: RequestPassengerInput) => {
+              const normalized = toPassengerPayload(payload);
+              setForm({
+                ...form,
+                first_name: normalized.first_name ?? "",
+                last_name: normalized.last_name ?? "",
+                email: normalized.email ?? "",
+                phone: normalized.phone ?? "",
+                first_passenger_date_of_birth: normalized.date_of_birth ?? "",
+                primary_passenger_id: undefined,
+              });
+              setClientPickerOpen(false);
+            }}
           />
           {message ? <p className="status success">{message}</p> : null}
           {error ? <p className="status error">{error}</p> : null}
-        </section>
+        </div>
       ) : null}
 
       {view.type === "edit" ? (

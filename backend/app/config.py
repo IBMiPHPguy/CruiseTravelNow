@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     seed_admin_email: str | None = None
     seed_admin_password: str | None = None
     attachments_dir: str = "/app/uploads"
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash-lite"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

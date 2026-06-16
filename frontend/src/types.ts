@@ -35,7 +35,7 @@ export type Attachment = {
 
 export type AttachmentKind = "transcripts" | "chats";
 
-export type RequestPassenger = {
+export type PassengerProfile = {
   id: number;
   first_name: string;
   last_name: string;
@@ -46,11 +46,25 @@ export type RequestPassenger = {
   updated_at: string;
 };
 
-export type RequestPassengerInput = {
+export type RequestPassenger = {
+  id: number;
+  passenger_id: number;
+  is_primary: boolean;
   first_name: string;
   last_name: string;
   email: string;
   phone: string;
+  date_of_birth: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RequestPassengerInput = {
+  passenger_id?: number;
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+  phone?: string;
   date_of_birth?: string | null;
 };
 
@@ -94,6 +108,8 @@ export type RequestNote = {
   updated_at: string;
   audits: RequestNoteAudit[];
 };
+
+export type RequestNoteSummary = Omit<RequestNote, "content" | "audits">;
 
 export type RequestNoteInput = {
   summary: string;
@@ -140,6 +156,22 @@ export type ProposedCruise = {
   updated_by: UserAudit;
   created_at: string;
   updated_at: string;
+};
+
+export type GeneratedProposedCruisesResponse = {
+  research_document_id: number;
+  research_document_filename: string;
+  model: string;
+  cruises: ProposedCruiseInput[];
+};
+
+export type GeneratedResearchCommunicationResponse = {
+  model: string;
+  proposed_cruise_count: number;
+  subject: string;
+  email_subject: string;
+  body: string;
+  communication: RequestCommunication;
 };
 
 export type ProposedCruiseInput = {
@@ -211,24 +243,112 @@ export type TravelRequest = {
   updated_at: string;
 };
 
-export type TravelRequestDetail = TravelRequest & {
-  request_passengers: RequestPassenger[];
-  request_notes: RequestNote[];
+export type ResearchDocument = {
+  id: number;
+  original_filename: string;
+  mime_type: string;
+  size_bytes: number;
+  uploaded_by: UserAudit;
+  created_at: string;
+};
+
+export type RequestTask = {
+  id: number;
+  task_key: string;
+  title: string;
+  description: string | null;
+  status: string;
+  sort_order: number;
+  due_at: string | null;
+  completed_at: string | null;
+  completed_by: UserAudit | null;
+  result: Record<string, unknown> | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RequestWorkflow = {
+  id: number;
+  workflow_type: string;
+  status: string;
+  parent_workflow_id: number | null;
+  context: Record<string, unknown> | null;
+  started_by: UserAudit;
+  completed_by: UserAudit | null;
+  tasks: RequestTask[];
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+};
+
+export type RequestCommunication = {
+  id: number;
+  communication_type: string;
+  subject: string;
+  body: string;
+  status: string;
+  request_workflow_id: number | null;
+  sent_at: string | null;
+  created_by: UserAudit;
+  updated_by: UserAudit;
+  created_at: string;
+  updated_at: string;
+};
+
+export type RequestCommunicationSummary = Omit<RequestCommunication, "body">;
+
+export type RequestChangeHistory = {
   request_audits: TravelRequestAudit[];
   passenger_audits: RequestPassengerAudit[];
+};
+
+export type WorkflowTemplate = {
+  workflow_type: string;
+  name: string;
+  description: string;
+};
+
+export type RequestCommunicationInput = {
+  communication_type: string;
+  subject: string;
+  body: string;
+  request_workflow_id?: number | null;
+  status?: string;
+};
+
+export type TravelRequestDetail = TravelRequest & {
+  last_worked_at: string;
+  last_worked_by: UserAudit;
+  request_passengers: RequestPassenger[];
+  request_notes: RequestNoteSummary[];
   call_transcripts: Attachment[];
   chat_logs: Attachment[];
   proposed_cruises: ProposedCruise[];
   quoted_insurance: QuotedInsurance[];
+  request_workflows: RequestWorkflow[];
+  request_communications: RequestCommunicationSummary[];
+  research_documents: ResearchDocument[];
+};
+
+export type DashboardNextOpenTask = {
+  id: number;
+  task_key: string;
+  title: string;
+  workflow_type: string;
+  workflow_name: string;
 };
 
 export type DashboardOpenRequest = TravelRequest & {
   is_stale: boolean;
+  next_open_task: DashboardNextOpenTask | null;
+  last_worked_at: string;
+  last_worked_by: UserAudit;
 };
 
 export type DashboardData = {
   open_count: number;
   stale_count: number;
+  closed_count: number;
   open_requests: DashboardOpenRequest[];
 };
 
@@ -249,6 +369,7 @@ export type TravelRequestInput = {
   passengers: number;
   cabins_needed: number;
   first_passenger_date_of_birth?: string;
+  primary_passenger_id?: number;
 };
 
 export type TravelRequestUpdateInput = TravelRequestInput & {
@@ -264,5 +385,6 @@ export type RegisterInput = {
 
 export type AppView =
   | { type: "dashboard" }
+  | { type: "closed" }
   | { type: "new" }
   | { type: "edit"; requestId: number };

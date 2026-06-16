@@ -1,14 +1,19 @@
 import type { DashboardData } from "./types";
 import RequestSummary from "./RequestSummary";
-import { formatTimestamp } from "./utils";
 
 type DashboardProps = {
   dashboard: DashboardData;
   onNewRequest: () => void;
   onOpenRequest: (requestId: number) => void;
+  onOpenClosedRequests: () => void;
 };
 
-export default function Dashboard({ dashboard, onNewRequest, onOpenRequest }: DashboardProps) {
+export default function Dashboard({
+  dashboard,
+  onNewRequest,
+  onOpenRequest,
+  onOpenClosedRequests,
+}: DashboardProps) {
   return (
     <section className="dashboard">
       <div className="dashboard-header">
@@ -29,7 +34,23 @@ export default function Dashboard({ dashboard, onNewRequest, onOpenRequest }: Da
         <article className="stat-card stat-card-warning">
           <span className="stat-label">Stale requests</span>
           <strong className="stat-value">{dashboard.stale_count}</strong>
-          <span className="stat-hint">Not updated in 3+ days</span>
+          <span className="stat-hint">No request activity in 3+ days</span>
+        </article>
+        <article
+          className="stat-card stat-card-clickable"
+          role="button"
+          tabIndex={0}
+          onClick={onOpenClosedRequests}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              onOpenClosedRequests();
+            }
+          }}
+        >
+          <span className="stat-label">Closed requests</span>
+          <strong className="stat-value">{dashboard.closed_count}</strong>
+          <span className="stat-hint stat-hint-neutral">View closed requests and reopen if needed</span>
         </article>
       </div>
 
@@ -46,11 +67,13 @@ export default function Dashboard({ dashboard, onNewRequest, onOpenRequest }: Da
                 className={`request-item request-button ${request.is_stale ? "stale" : ""}`}
                 onClick={() => onOpenRequest(request.id)}
               >
-                <RequestSummary request={request} />
-                <div className="meta">
-                  Last worked by {request.updated_by.username} · {formatTimestamp(request.updated_at)}
-                </div>
-                {request.is_stale ? <div className="stale-badge">Stale</div> : null}
+                <RequestSummary
+                  request={request}
+                  nextOpenTask={request.next_open_task}
+                  lastWorkedAt={request.last_worked_at}
+                  lastWorkedBy={request.last_worked_by}
+                  isStale={request.is_stale}
+                />
               </button>
             ))}
           </div>

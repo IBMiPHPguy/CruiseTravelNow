@@ -1,0 +1,320 @@
+import json
+import re
+from datetime import date
+from decimal import Decimal
+from typing import Any
+
+import google.generativeai as genai
+from pydantic import ValidationError
+
+from app.schemas import ProposedCruiseCreate, ProposedCruiseIncludes
+
+
+class GeminiConfigurationError(Exception):
+    pass
+
+
+class GeminiParseError(Exception):
+    pass
+
+
+def _default_includes() -> dict[str, Any]:
+    return ProposedCruiseIncludes().model_dump()
+
+
+_DATE_PLACEHOLDERS = frozenset({"", "tbd", "n/a", "na", "unknown", "null", "none", "-", "—"})
+
+
+def _is_missing_date_value(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip().lower() in _DATE_PLACEHOLDERS
+    return False
+
+
+def _coerce_date(value: Any, fallback: date | None = None) -> date:
+    if isinstance(value, date):
+        return value
+    if not _is_missing_date_value(value) and isinstance(value, str):
+        cleaned = value.strip()[:10]
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", cleaned):
+            return date.fromisoformat(cleaned)
+    if fallback is not None:
+        return fallback
+    raise ValueError("A valid date is required.")
+
+
+def _coerce_decimal(value: Any, default: str = "0") -> Decimal:
+    if value is None or value == "":
+        return Decimal(default)
+    if isinstance(value, (int, float, Decimal)):
+        return Decimal(str(value))
+    cleaned = str(value).strip().replace("$", "").replace(",", "")
+    if not cleaned:
+        return Decimal(default)
+    return Decimal(cleaned)
+
+
+def _normalize_includes(raw: Any) -> dict[str, Any]:
+    base = _default_includes()
+    if not isinstance(raw, dict):
+        return base
+
+    for key in ("drink_package", "wifi"):
+        item = raw.get(key)
+        if isinstance(item, dict):
+            base[key]["included"] = bool(item.get("included", False))
+            name = item.get("name")
+            base[key]["name"] = str(name).strip() if name else None
+
+    for key in ("excursion_credit", "onboard_credit"):
+        item = raw.get(key)
+        if isinstance(item, dict):
+            base[key]["included"] = bool(item.get("included", False))
+            amount = item.get("amount")
+            base[key]["amount"] = _coerce_decimal(amount) if amount not in (None, "") else None
+
+    if "tips" in raw:
+        base["tips"] = bool(raw["tips"])
+    if "excursion" in raw:
+        base["excursion"] = bool(raw["excursion"])
+
+    return base
+
+
+def _normalize_cruise_payload(
+    raw: dict[str, Any],
+    *,
+    request_context: dict[str, Any],
+) -> dict[str, Any]:
+    fallback_departure = None
+    fallback_return = None
+    if request_context.get("departure_date"):
+        fallback_departure = date.fromisoformat(str(request_context["departure_date"])[:10])
+    if request_context.get("return_date"):
+        fallback_return = date.fromisoformat(str(request_context["return_date"])[:10])
+
+    departure_date = _coerce_date(raw.get("departure_date"), fallback_departure)
+    deposit_due = _coerce_date(raw.get("deposit_due_date"), departure_date)
+    final_due = _coerce_date(
+        raw.get("final_payment_due_date"),
+        fallback_return or deposit_due,
+    )
+    if final_due < deposit_due:
+        final_due = deposit_due
+
+    room_number = str(raw.get("room_number") or "TBD").strip() or "TBD"
+    passengers_in_room = int(raw.get("passengers_in_room") or request_context.get("passengers") or 2)
+
+    return {
+        "departure_date": departure_date,
+        "cruise_line": str(
+            raw.get("cruise_line") or request_context.get("cruise_line_preference") or "TBD"
+        ).strip()[:120],
+        "ship": str(raw.get("ship") or "TBD").strip()[:120],
+        "number_of_nights": max(1, int(raw.get("number_of_nights") or 7)),
+        "itinerary_name": str(raw.get("itinerary_name") or raw.get("itinerary") or "TBD").strip()[:160],
+        "room_category": str(raw.get("room_category") or "TBD").strip()[:120],
+        "room_number": room_number[:40],
+        "passengers_in_room": max(1, passengers_in_room),
+        "deposit_amount": _coerce_decimal(raw.get("deposit_amount")),
+        "deposit_due_date": deposit_due,
+        "final_payment_due_date": final_due,
+        "cost": _coerce_decimal(raw.get("cost")),
+        "includes": _normalize_includes(raw.get("includes")),
+        "passenger_ids": raw.get("passenger_ids") or [],
+    }
+
+
+def _build_prompt(research_text: str, request_context: dict[str, Any]) -> str:
+    return f"""You extract structured proposed cruise options from agency research notes.
+
+Travel request context (use to fill gaps and stay consistent):
+{json.dumps(request_context, indent=2, default=str)}
+
+Research document:
+{research_text}
+
+Return JSON only, with this exact shape:
+{{
+  "cruises": [
+    {{
+      "departure_date": "YYYY-MM-DD",
+      "cruise_line": "string",
+      "ship": "string",
+      "number_of_nights": 7,
+      "itinerary_name": "string",
+      "room_category": "string",
+      "room_number": "string",
+      "passengers_in_room": 2,
+      "deposit_amount": 0,
+      "deposit_due_date": "YYYY-MM-DD",
+      "final_payment_due_date": "YYYY-MM-DD",
+      "cost": 0,
+      "includes": {{
+        "drink_package": {{"included": false, "name": null}},
+        "wifi": {{"included": false, "name": null}},
+        "tips": false,
+        "excursion": false,
+        "excursion_credit": {{"included": false, "amount": null}},
+        "onboard_credit": {{"included": false, "amount": null}}
+      }}
+    }}
+  ]
+}}
+
+Rules:
+- Include every distinct cruise option found in the research document.
+- Use ISO dates (YYYY-MM-DD) for all date fields. Never use "TBD" for dates.
+- If a cruise date is missing, use the request departure_date or return_date from context.
+- Use "TBD" only for unknown room numbers.
+- Amounts are USD numbers without currency symbols.
+- Do not include passenger names or ids.
+"""
+
+
+def _extract_json(text: str) -> dict[str, Any]:
+    cleaned = text.strip()
+    if cleaned.startswith("```"):
+        cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
+        cleaned = re.sub(r"\s*```$", "", cleaned)
+    return json.loads(cleaned)
+
+
+def generate_proposed_cruises_from_research(
+    *,
+    api_key: str,
+    model_name: str,
+    research_text: str,
+    request_context: dict[str, Any],
+) -> tuple[list[ProposedCruiseCreate], str]:
+    if not api_key.strip():
+        raise GeminiConfigurationError("Gemini API key is not configured.")
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_name)
+    prompt = _build_prompt(research_text, request_context)
+
+    try:
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                temperature=0.2,
+            ),
+        )
+    except Exception as exc:
+        raise GeminiParseError(f"Gemini request failed: {exc}") from exc
+
+    response_text = getattr(response, "text", None) or ""
+    if not response_text.strip():
+        raise GeminiParseError("Gemini returned an empty response.")
+
+    try:
+        payload = _extract_json(response_text)
+    except json.JSONDecodeError as exc:
+        raise GeminiParseError("Gemini returned invalid JSON.") from exc
+
+    raw_cruises = payload.get("cruises")
+    if not isinstance(raw_cruises, list) or not raw_cruises:
+        raise GeminiParseError("No proposed cruises were found in the research document.")
+
+    cruises: list[ProposedCruiseCreate] = []
+    errors: list[str] = []
+
+    for index, raw in enumerate(raw_cruises, start=1):
+        if not isinstance(raw, dict):
+            errors.append(f"Option {index} was not an object.")
+            continue
+        try:
+            normalized = _normalize_cruise_payload(raw, request_context=request_context)
+            cruises.append(ProposedCruiseCreate.model_validate(normalized))
+        except (ValidationError, ValueError, TypeError) as exc:
+            errors.append(f"Option {index}: {exc}")
+
+    if not cruises:
+        detail = "; ".join(errors) if errors else "No valid cruise options could be parsed."
+        raise GeminiParseError(detail)
+
+    return cruises, model_name
+
+
+def _build_proposal_email_prompt(
+    request_context: dict[str, Any],
+    proposed_cruises: list[dict[str, Any]],
+) -> str:
+    return f"""You write client-facing cruise proposal emails for a travel agency.
+
+Travel request context:
+{json.dumps(request_context, indent=2, default=str)}
+
+Proposed cruise options to include (present every option clearly):
+{json.dumps(proposed_cruises, indent=2, default=str)}
+
+Return JSON only with this exact shape:
+{{
+  "email_subject": "string",
+  "body": "string"
+}}
+
+Rules for the email:
+- email_subject is the client-facing email subject line (concise and specific to the proposal).
+- Write to the client by first name when available in client_name.
+- Use a warm, professional travel-advisor tone.
+- Format the body as plain text suitable for email (no HTML or markdown).
+- Open with a brief personalized greeting and summary of what you researched.
+- Present each cruise option as a clearly labeled section (Option 1, Option 2, etc.).
+- For each option include: cruise line, ship, departure date, nights, itinerary, cabin category, passengers in room, total cost, deposit amount and due date, final payment due date, and a concise inclusions summary.
+- Use blank lines between sections for readability.
+- Include a short closing that invites the client to reply with questions or their preferred option.
+- Use USD amounts formatted like $1,234.56 in the body text.
+- Do not invent options or prices beyond what is provided.
+- Do not include internal ids or passenger ids.
+"""
+
+
+def generate_research_communication_from_proposals(
+    *,
+    api_key: str,
+    model_name: str,
+    request_context: dict[str, Any],
+    proposed_cruises: list[dict[str, Any]],
+) -> tuple[str, str, str]:
+    if not api_key.strip():
+        raise GeminiConfigurationError("Gemini API key is not configured.")
+    if not proposed_cruises:
+        raise GeminiParseError("No proposed cruises were provided.")
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_name)
+    prompt = _build_proposal_email_prompt(request_context, proposed_cruises)
+
+    try:
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                temperature=0.4,
+            ),
+        )
+    except Exception as exc:
+        raise GeminiParseError(f"Gemini request failed: {exc}") from exc
+
+    response_text = getattr(response, "text", None) or ""
+    if not response_text.strip():
+        raise GeminiParseError("Gemini returned an empty response.")
+
+    try:
+        payload = _extract_json(response_text)
+    except json.JSONDecodeError as exc:
+        raise GeminiParseError("Gemini returned invalid JSON.") from exc
+
+    email_subject = str(payload.get("email_subject") or payload.get("subject") or "").strip()
+    body = str(payload.get("body") or "").strip()
+    if not email_subject:
+        raise GeminiParseError("Gemini returned an empty email subject.")
+    if not body:
+        raise GeminiParseError("Gemini returned an empty email body.")
+
+    return email_subject, body, model_name

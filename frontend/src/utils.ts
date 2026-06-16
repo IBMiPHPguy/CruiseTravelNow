@@ -24,7 +24,21 @@ export function formatTimestamp(value: string): string {
 }
 
 export function formatDate(value: string): string {
-  return new Date(value).toLocaleDateString();
+  const isoMatch = /^(\d{4})-(\d{2})-(\d{2})/.exec(value);
+  if (isoMatch) {
+    const [, year, month, day] = isoMatch;
+    return `${month}/${day}/${year}`;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const year = parsed.getFullYear();
+  return `${month}/${day}/${year}`;
 }
 
 export function formatFileSize(bytes: number): string {
@@ -41,4 +55,21 @@ export function isRequestStale(updatedAt: string): boolean {
   const updated = new Date(updatedAt).getTime();
   const threshold = Date.now() - 3 * 24 * 60 * 60 * 1000;
   return updated < threshold;
+}
+
+export async function copyTextToClipboard(text: string): Promise<void> {
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text);
+    return;
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "absolute";
+  textarea.style.left = "-9999px";
+  document.body.appendChild(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  document.body.removeChild(textarea);
 }
