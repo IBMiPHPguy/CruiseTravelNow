@@ -1,0 +1,7 @@
+[report]
+show_missing = True
+precision = 0
+skip_empty = True
+
+[html]
+directory = htmlcov-unit

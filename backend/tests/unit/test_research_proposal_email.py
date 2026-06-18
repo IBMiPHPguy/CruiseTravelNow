@@ -57,3 +57,29 @@ def test_build_research_proposal_email_html_falls_back_to_itinerary_name():
     )
 
     assert "Western Caribbean" in html
+
+
+def test_build_research_proposal_email_html_renders_optional_inclusions():
+    html = build_research_proposal_email_html(
+        intro="",
+        closing="Thanks",
+        cruises=[
+            _sample_cruise(
+                includes={
+                    "drink_package": {"included": False, "name": ""},
+                    "wifi": {"included": True, "name": "Premium"},
+                    "tips": False,
+                    "excursion": True,
+                    "excursion_credit": {"included": True, "amount": "75.00"},
+                    "onboard_credit": {"included": True, "amount": "100.00"},
+                    "gift_obc": {"included": True, "amount": "50.00"},
+                }
+            )
+        ],
+    )
+
+    assert "Wi-Fi: Premium" in html
+    assert "Shore excursion included" in html
+    assert "Excursion credit" in html
+    assert "Cruise line OBC" in html
+    assert "Gift OBC" in html

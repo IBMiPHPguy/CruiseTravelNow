@@ -2,10 +2,15 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 
 from app.attachment_storage import migrate_legacy_attachment_content
 from app.config import settings
 from app.database import Base, SessionLocal, engine
+from app.rate_limit import limiter
+from app.security_config import validate_production_settings
 
 
 def seed_admin_user(db) -> None:
@@ -47,19 +52,28 @@ async def lifespan(_app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    validate_production_settings(settings)
+
     application = FastAPI(
         title="CruiseTravelNow API",
         description="Workflow API for new cruise travel requests.",
         version="0.3.0",
         lifespan=lifespan,
+        docs_url="/docs" if settings.expose_openapi else None,
+        redoc_url="/redoc" if settings.expose_openapi else None,
+        openapi_url="/openapi.json" if settings.expose_openapi else None,
     )
+
+    application.state.limiter = limiter
+    application.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+    application.add_middleware(SlowAPIMiddleware)
 
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=settings.cors_origin_list,
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
     from app.routers import register_routers

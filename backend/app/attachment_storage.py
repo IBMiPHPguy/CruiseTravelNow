@@ -62,6 +62,21 @@ def relative_storage_path(request_id: int, kind: str, stored_name: str) -> str:
     return f"requests/{request_id}/{kind}/{stored_name}"
 
 
+def resolve_attachment_path(attachments_dir: str, relative_path: str) -> Path:
+    if not relative_path or relative_path.startswith(("/", "\\")):
+        raise HTTPException(status_code=400, detail="Invalid attachment path.")
+    if Path(relative_path).is_absolute():
+        raise HTTPException(status_code=400, detail="Invalid attachment path.")
+    if ".." in Path(relative_path).parts:
+        raise HTTPException(status_code=400, detail="Invalid attachment path.")
+
+    root = attachments_root(attachments_dir).resolve()
+    target = (root / relative_path).resolve()
+    if not target.is_relative_to(root):
+        raise HTTPException(status_code=403, detail="Invalid attachment path.")
+    return target
+
+
 async def read_upload_file(upload: UploadFile) -> tuple[bytes, str, str, int]:
     filename = sanitize_filename(upload.filename or "upload.txt")
     content = await upload.read()
@@ -72,7 +87,7 @@ async def read_upload_file(upload: UploadFile) -> tuple[bytes, str, str, int]:
 
 
 def write_bytes(attachments_dir: str, relative_path: str, content: bytes) -> None:
-    target = attachments_root(attachments_dir) / relative_path
+    target = resolve_attachment_path(attachments_dir, relative_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(content)
 
@@ -93,7 +108,7 @@ async def store_upload_file(
 def read_attachment_text(attachments_dir: str, relative_path: str, mime_type: str) -> str:
     if not is_text_mime(mime_type):
         raise HTTPException(status_code=415, detail="This file type must be downloaded instead of previewed.")
-    target = attachments_root(attachments_dir) / relative_path
+    target = resolve_attachment_path(attachments_dir, relative_path)
     if not target.is_file():
         raise HTTPException(status_code=404, detail="Attachment file not found.")
     return target.read_text(encoding="utf-8", errors="replace")

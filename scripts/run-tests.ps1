@@ -12,7 +12,7 @@ function Run-BackendUnitTests {
         docker compose --profile test run --rm `
             -e DATABASE_URL=mysql+pymysql://root:testroot@test-db:3306/cruisetravelnow_test `
             backend-test `
-            sh -c "pip install --no-cache-dir -r requirements-dev.txt && pytest tests/unit -v"
+            sh -c "pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt && pytest tests/unit -v --cov=app.workflow_helpers --cov=app.proposed_cruise_helpers --cov=app.passenger_helpers --cov=app.research_proposal_email --cov=app.audit_helpers --cov=app.security --cov=app.services.gemini_context_service --cov=app.services.proposed_cruise_service --cov-config=.coveragerc --cov-report=term-missing:skip-covered --cov-fail-under=95"
     }
     finally {
         Pop-Location
@@ -24,7 +24,7 @@ function Run-BackendIntegrationTests {
     try {
         docker compose --profile test up -d test-db | Out-Null
         docker compose --profile test run --rm backend-test `
-            sh -c "pip install --no-cache-dir -r requirements-dev.txt && pytest tests/integration -v"
+            sh -c "pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt && pytest tests/integration -v"
     }
     finally {
         Pop-Location

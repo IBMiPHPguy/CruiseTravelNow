@@ -91,3 +91,22 @@ def test_delete_draft_communication_only(client, auth_headers, sample_request_pa
     )
     assert blocked_delete.status_code == 400
     assert "draft" in blocked_delete.json()["detail"].lower()
+
+
+@pytest.mark.integration
+def test_register_rejected_when_public_registration_disabled(client, monkeypatch):
+    from app.config import settings
+
+    monkeypatch.setattr(settings, "allow_public_registration", False)
+
+    response = client.post(
+        "/api/auth/register",
+        json={
+            "username": "blockeduser",
+            "email": "blocked@example.com",
+            "password": "SecurePass1!",
+        },
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Public registration is disabled."

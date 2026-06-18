@@ -104,7 +104,7 @@ services:
       test-db:
         condition: service_healthy
     command: >
-      sh -c "pip install --no-cache-dir -r requirements-dev.txt &&
+      sh -c "pip install --no-cache-dir -r requirements.txt -r requirements-dev.txt &&
              pytest tests/ -v --cov=app --cov-report=term-missing"
 
   frontend-test:

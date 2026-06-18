@@ -8,6 +8,9 @@ from sqlalchemy.pool import StaticPool
 
 os.environ.setdefault("APP_ENV", "test")
 os.environ.setdefault("JWT_SECRET", "test-jwt-secret-for-tests")
+os.environ.setdefault("ALLOW_PUBLIC_REGISTRATION", "true")
+os.environ.setdefault("CORS_ORIGINS", "http://testserver")
+os.environ.setdefault("EXPOSE_OPENAPI", "true")
 os.environ.setdefault("SEED_ADMIN_USERNAME", "")
 os.environ.setdefault("SEED_ADMIN_PASSWORD", "")
 os.environ.setdefault("ATTACHMENTS_DIR", "/tmp/cruisetravelnow-test-uploads")

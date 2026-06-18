@@ -1,10 +1,12 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import User
+from app.rate_limit import limiter
 from app.schemas import TokenResponse, UserCreate, UserRead
 from app.security import create_access_token, hash_password, verify_password
 
@@ -12,7 +14,15 @@ router = APIRouter(prefix="/api/auth", tags=["auth"])
 
 
 @router.post("/register", response_model=UserRead, status_code=201)
-def register_user(payload: UserCreate, db: Session = Depends(get_db)) -> User:
+@limiter.limit(settings.auth_rate_limit)
+def register_user(
+    request: Request,
+    payload: UserCreate,
+    db: Session = Depends(get_db),
+) -> User:
+    if not settings.allow_public_registration:
+        raise HTTPException(status_code=403, detail="Public registration is disabled.")
+
     if db.query(User).filter(User.username == payload.username).first():
         raise HTTPException(status_code=400, detail="Username is already taken.")
     if db.query(User).filter(User.email == payload.email).first():
@@ -35,7 +45,12 @@ def register_user(payload: UserCreate, db: Session = Depends(get_db)) -> User:
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)) -> TokenResponse:
+@limiter.limit(settings.auth_rate_limit)
+def login(
+    request: Request,
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Session = Depends(get_db),
+) -> TokenResponse:
     user = db.query(User).filter(User.username == form_data.username, User.is_active.is_(True)).first()
     if user is None or not verify_password(form_data.password, user.password_hash):
         raise HTTPException(

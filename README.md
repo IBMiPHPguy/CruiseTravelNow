@@ -241,8 +241,45 @@ See `.env.example` for defaults.
 | `ATTACHMENTS_DIR` | Upload root inside the backend container |
 | `GEMINI_API_KEY`, `GEMINI_MODEL` | Optional AI integration |
 | `*_PORT` | Host ports for nginx, frontend, backend |
+| `ALLOW_PUBLIC_REGISTRATION` | When `false`, `/api/auth/register` returns 403 |
+| `CORS_ORIGINS` | Comma-separated browser origins allowed by the API |
+| `EXPOSE_OPENAPI` | When `false`, hides `/docs` and `/openapi.json` on the backend |
+| `AUTH_RATE_LIMIT` | slowapi limit for login/register (default `10/minute`) |
+| `APP_ENV` | Set to `production` to enforce secure startup checks |
 
 Change `JWT_SECRET`, database passwords, and the seeded admin password before deploying outside local development.
+
+## Security
+
+Development defaults are convenient, not hardened. For production:
+
+```powershell
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+```
+
+Production overlay (`docker-compose.prod.yml`):
+
+- Stops publishing MySQL, backend, and frontend ports on the host (nginx HTTPS only)
+- Sets `ALLOW_PUBLIC_REGISTRATION=false` and `EXPOSE_OPENAPI=false`
+- Uses `nginx/nginx.prod.conf` with TLS, HSTS, security headers, and blocked API docs
+- Requires TLS certs in `nginx/certs/fullchain.pem` and `nginx/certs/privkey.pem`
+
+When `APP_ENV=production`, the backend refuses to start unless:
+
+- `JWT_SECRET` is at least 32 characters and not a known default
+- `DATABASE_URL` does not use example passwords
+- `ALLOW_PUBLIC_REGISTRATION=false`
+- `CORS_ORIGINS` lists explicit origins (no `*`)
+- `EXPOSE_OPENAPI=false`
+
+Other P0 controls already in place:
+
+- bcrypt password hashing and JWT bearer auth on all CRM routes
+- Login/register rate limiting (`AUTH_RATE_LIMIT`)
+- Attachment path containment (blocks `..` and paths outside the upload root)
+- nginx security headers on the dev proxy (`nginx/nginx.conf`)
+
+Local development still exposes ports and allows registration via the Register tab when `ALLOW_PUBLIC_REGISTRATION=true`.
 
 ## API endpoints
 
@@ -334,7 +371,7 @@ docker compose --profile test up -d test-db
 
 The test database uses a fresh MySQL container with `db/init.sql`. Recreate `test-db` after schema changes.
 
-Run only backend unit tests:
+Run only backend unit tests (enforces 95% coverage on unit-testable helper modules: workflow, proposed cruise, passenger, audit, security, research email HTML, gemini context, and proposed cruise read assembly; request CRUD is covered by integration tests):
 
 ```powershell
 .\scripts\run-tests.ps1 -Suite unit
@@ -362,9 +399,9 @@ docker compose --profile test run --rm frontend-test
 
 Backend layout:
 
-- `backend/tests/unit/` — domain/helper tests (workflow logic, cabin normalization, passenger activation, research email HTML)
+- `backend/tests/unit/` — domain/helper tests (workflow logic, cabin normalization, passenger activation, audit/security helpers, dashboard assembly, research email HTML)
 - `backend/tests/integration/` — FastAPI endpoint tests against MySQL (auth, requests, communications, passenger reactivation)
-- `backend/pytest.ini`, `backend/requirements-dev.txt` — pytest configuration and dev dependencies
+- `backend/pytest.ini`, `backend/requirements-dev.txt`, `backend/.coveragerc` — pytest configuration, dev dependencies, and unit-test coverage scope
 
 Frontend tests live beside source files as `*.test.ts` and run with Vitest (`apiClient.test.ts`, `domainHelpers.test.ts`).
 

@@ -115,6 +115,129 @@ def test_record_follow_up_reached_out_rejects_wrong_task_key():
         record_follow_up_reached_out(Task(), now=datetime.now(timezone.utc))
 
 
+def test_record_follow_up_reached_out_rejects_non_open_task():
+    class Task:
+        task_key = TASK_KEY_FOLLOW_UP_RESEARCH
+        status = "Done"
+        result = {}
+
+    with pytest.raises(ValueError, match="open tasks"):
+        record_follow_up_reached_out(Task(), now=datetime.now(timezone.utc))
+
+
+def test_schedule_follow_up_due_date_ignores_non_communicate_workflow():
+    class Task:
+        task_key = TASK_KEY_FOLLOW_UP_RESEARCH
+        status = "Open"
+        due_at = None
+
+    class Workflow:
+        workflow_type = WORKFLOW_TYPE_RESEARCH
+        tasks = [Task()]
+
+    workflow = Workflow()
+    schedule_follow_up_due_date(workflow, datetime(2026, 6, 1, tzinfo=timezone.utc))
+    assert workflow.tasks[0].due_at is None
+
+
+def test_ensure_follow_up_due_date_ignores_when_follow_up_already_scheduled():
+    completed_at = datetime(2026, 6, 1, 9, 30, tzinfo=timezone.utc)
+
+    class Task:
+        def __init__(self, task_key, status, completed_at=None, due_at=None):
+            self.task_key = task_key
+            self.status = status
+            self.completed_at = completed_at
+            self.due_at = due_at
+
+    class Workflow:
+        workflow_type = WORKFLOW_TYPE_COMMUNICATE_RESEARCH
+        tasks = [
+            Task(TASK_KEY_SEND_RESEARCH_COMMUNICATION, "Done", completed_at=completed_at),
+            Task(TASK_KEY_FOLLOW_UP_RESEARCH, "Open", due_at=completed_at),
+        ]
+
+    workflow = Workflow()
+    ensure_follow_up_due_date(workflow)
+    assert workflow.tasks[1].due_at == completed_at
+
+
+def test_schedule_follow_up_due_date_skips_when_follow_up_not_open():
+    send_completed_at = datetime(2026, 6, 1, 12, 0, tzinfo=timezone.utc)
+
+    class Task:
+        def __init__(self, task_key, status):
+            self.task_key = task_key
+            self.status = status
+            self.due_at = None
+
+    class Workflow:
+        workflow_type = WORKFLOW_TYPE_COMMUNICATE_RESEARCH
+        tasks = [
+            Task(TASK_KEY_SEND_RESEARCH_COMMUNICATION, "Done"),
+            Task(TASK_KEY_FOLLOW_UP_RESEARCH, "Done"),
+        ]
+
+    workflow = Workflow()
+    schedule_follow_up_due_date(workflow, send_completed_at)
+    assert workflow.tasks[1].due_at is None
+
+
+def test_ensure_follow_up_due_date_ignores_non_communicate_workflow():
+    class Task:
+        task_key = TASK_KEY_FOLLOW_UP_RESEARCH
+        status = "Open"
+        completed_at = None
+        due_at = None
+
+    class Workflow:
+        workflow_type = WORKFLOW_TYPE_RESEARCH
+        tasks = [Task()]
+
+    workflow = Workflow()
+    ensure_follow_up_due_date(workflow)
+    assert workflow.tasks[0].due_at is None
+
+
+def test_ensure_follow_up_due_date_ignores_missing_tasks():
+    class Workflow:
+        workflow_type = WORKFLOW_TYPE_COMMUNICATE_RESEARCH
+        tasks = []
+
+    ensure_follow_up_due_date(Workflow())
+
+
+def test_ensure_follow_up_due_date_ignores_send_without_completed_at():
+    class Task:
+        def __init__(self, task_key, status, completed_at=None, due_at=None):
+            self.task_key = task_key
+            self.status = status
+            self.completed_at = completed_at
+            self.due_at = due_at
+
+    class Workflow:
+        workflow_type = WORKFLOW_TYPE_COMMUNICATE_RESEARCH
+        tasks = [
+            Task(TASK_KEY_SEND_RESEARCH_COMMUNICATION, "Done", completed_at=None),
+            Task(TASK_KEY_FOLLOW_UP_RESEARCH, "Open"),
+        ]
+
+    workflow = Workflow()
+    ensure_follow_up_due_date(workflow)
+    assert workflow.tasks[1].due_at is None
+
+
+def test_normalize_cabin_pricing_uses_existing_entries():
+    pricing = normalize_cabin_pricing_list(
+        [{"deposit_amount": "75.00", "cost": "1500.00"}],
+        2,
+        deposit_amount=Decimal("100.00"),
+        cost=Decimal("2000.00"),
+    )
+    assert pricing[0] == {"deposit_amount": "75.00", "cost": "1500.00"}
+    assert pricing[1] == {"deposit_amount": "50.00", "cost": "1000.00"}
+
+
 def test_normalize_cabin_pricing_splits_totals_evenly():
     pricing = normalize_cabin_pricing_list(
         None,
@@ -167,6 +290,10 @@ def test_normalize_cabin_rooms_preserves_existing_room_and_fills_missing():
 
 def test_normalize_room_passenger_ids_from_flat_list():
     assert normalize_room_passenger_ids(None, [10, 11], 2) == [[10, 11], []]
+
+
+def test_normalize_room_passenger_ids_from_nested_lists():
+    assert normalize_room_passenger_ids([[1], [2, 3]], None, 3) == [[1], [2, 3], []]
 
 
 def test_flatten_room_passenger_ids():

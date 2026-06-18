@@ -1,0 +1,28 @@
+# Production overlay. Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Before first run:
+#   1. Set strong JWT_SECRET and CORS_ORIGINS in .env
+#   2. Place TLS certs in nginx/certs/fullchain.pem and nginx/certs/privkey.pem
+
+services:
+  db:
+    ports: !reset []
+
+  backend:
+    ports: !reset []
+    environment:
+      APP_ENV: production
+      ALLOW_PUBLIC_REGISTRATION: "false"
+      EXPOSE_OPENAPI: "false"
+      CORS_ORIGINS: ${CORS_ORIGINS:-https://localhost}
+
+  frontend:
+    ports: !reset []
+
+  nginx:
+    ports: !reset
+      - "${NGINX_HTTPS_PORT:-443}:443"
+    volumes:
+      - ./nginx/nginx.prod.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/certs:/etc/nginx/certs:ro
