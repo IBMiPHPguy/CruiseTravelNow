@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from jose import JWTError, jwt
@@ -11,6 +12,12 @@ pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 PASSWORD_PATTERN = re.compile(
     r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[^A-Za-z0-9])\S{11,}$"
 )
+
+
+@dataclass(frozen=True)
+class TokenClaims:
+    username: str
+    agency_id: str
 
 
 def validate_password(password: str) -> None:
@@ -34,18 +41,19 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     return pwd_context.verify(plain_password, hashed_password)
 
 
-def create_access_token(subject: str) -> str:
+def create_access_token(subject: str, agency_id: str) -> str:
     expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_expire_minutes)
-    payload = {"sub": subject, "exp": expire}
+    payload = {"sub": subject, "agency_id": agency_id, "exp": expire}
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def decode_access_token(token: str) -> str:
+def decode_access_token(token: str) -> TokenClaims:
     try:
         payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
         username = payload.get("sub")
-        if not username:
-            raise JWTError("Missing subject.")
-        return username
+        agency_id = payload.get("agency_id")
+        if not username or not agency_id:
+            raise JWTError("Missing subject or agency.")
+        return TokenClaims(username=username, agency_id=str(agency_id))
     except JWTError as exc:
         raise ValueError("Invalid or expired token.") from exc

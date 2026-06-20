@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Passenger
 from app.services.client_import_parse_service import read_client_import_sheet
+from app.tenant_context import require_current_agency_id
 
 IMPORTABLE_FIELDS = {
     "first_name",
@@ -143,6 +144,7 @@ def _build_passenger_from_row(
     qualifiers = _parse_qualifiers(row_values.get("qualifiers", ""))
 
     return Passenger(
+        agency_id=require_current_agency_id(),
         first_name=first_name,
         last_name=last_name,
         email=email,

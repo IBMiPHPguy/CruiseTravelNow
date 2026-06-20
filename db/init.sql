@@ -1,15 +1,32 @@
-CREATE TABLE IF NOT EXISTS users (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(80) NOT NULL UNIQUE,
-    email VARCHAR(255) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
+CREATE TABLE IF NOT EXISTS agencies (
+    id CHAR(36) PRIMARY KEY,
+    name VARCHAR(120) NOT NULL,
+    slug VARCHAR(80) NOT NULL UNIQUE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+INSERT INTO agencies (id, name, slug)
+VALUES ('00000000-0000-4000-8000-000000000001', 'Default Agency', 'default');
+
+CREATE TABLE IF NOT EXISTS users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    agency_id CHAR(36) NOT NULL,
+    username VARCHAR(80) NOT NULL UNIQUE,
+    email VARCHAR(255) NOT NULL UNIQUE,
+    password_hash VARCHAR(255) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_users_agency FOREIGN KEY (agency_id) REFERENCES agencies(id)
+);
+
+CREATE INDEX idx_users_agency ON users(agency_id);
+
 CREATE TABLE IF NOT EXISTS travel_requests (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    agency_id CHAR(36) NOT NULL,
     first_name VARCHAR(80) NOT NULL,
     last_name VARCHAR(80) NOT NULL,
     email VARCHAR(255) NOT NULL,
@@ -31,6 +48,7 @@ CREATE TABLE IF NOT EXISTS travel_requests (
     updated_by_id INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_travel_requests_agency FOREIGN KEY (agency_id) REFERENCES agencies(id),
     CONSTRAINT fk_travel_requests_created_by FOREIGN KEY (created_by_id) REFERENCES users(id),
     CONSTRAINT fk_travel_requests_updated_by FOREIGN KEY (updated_by_id) REFERENCES users(id)
 );
@@ -63,6 +81,7 @@ CREATE TABLE IF NOT EXISTS chat_logs (
 
 CREATE TABLE IF NOT EXISTS passengers (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    agency_id CHAR(36) NOT NULL,
     first_name VARCHAR(80) NOT NULL,
     last_name VARCHAR(80) NOT NULL,
     email VARCHAR(255) NULL,
@@ -79,6 +98,7 @@ CREATE TABLE IF NOT EXISTS passengers (
     created_by_id INT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    CONSTRAINT fk_passengers_agency FOREIGN KEY (agency_id) REFERENCES agencies(id),
     CONSTRAINT fk_passengers_created_by FOREIGN KEY (created_by_id) REFERENCES users(id)
 );
 
@@ -282,6 +302,8 @@ CREATE TABLE IF NOT EXISTS request_research_documents (
 );
 
 -- Performance indexes (dashboard, reports, analytics)
+CREATE INDEX idx_travel_requests_agency ON travel_requests(agency_id);
+CREATE INDEX idx_travel_requests_agency_status ON travel_requests(agency_id, status);
 CREATE INDEX idx_travel_requests_status ON travel_requests(status);
 CREATE INDEX idx_travel_requests_created_at ON travel_requests(created_at);
 CREATE INDEX idx_travel_requests_created_by ON travel_requests(created_by_id);
@@ -292,6 +314,8 @@ CREATE INDEX idx_proposed_cruises_cruise_line ON proposed_cruises(cruise_line);
 CREATE INDEX idx_proposed_cruises_departure ON proposed_cruises(departure_date);
 CREATE INDEX idx_proposed_cruises_request_status ON proposed_cruises(travel_request_id, status);
 
+CREATE INDEX idx_passengers_agency ON passengers(agency_id);
+CREATE INDEX idx_passengers_agency_active ON passengers(agency_id, is_active);
 CREATE INDEX idx_passengers_is_active ON passengers(is_active);
 CREATE INDEX idx_passengers_last_first ON passengers(last_name, first_name);
 CREATE INDEX idx_passengers_state ON passengers(state_or_province);

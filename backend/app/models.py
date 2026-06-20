@@ -4,12 +4,31 @@ from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
+from app.tenant_constants import DEFAULT_AGENCY_ID
+
+
+class Agency(Base):
+    __tablename__ = "agencies"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    slug: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    users: Mapped[list["User"]] = relationship(back_populates="agency")
 
 
 class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    agency_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("agencies.id"), nullable=False, default=DEFAULT_AGENCY_ID, index=True
+    )
     username: Mapped[str] = mapped_column(String(80), nullable=False, unique=True)
     email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -19,12 +38,20 @@ class User(Base):
         DateTime, server_default=func.now(), onupdate=func.now()
     )
 
+    agency: Mapped[Agency] = relationship(back_populates="users")
+
 
 class TravelRequest(Base):
     __tablename__ = "travel_requests"
-    __table_args__ = (Index("idx_travel_requests_status_created", "status", "created_at"),)
+    __table_args__ = (
+        Index("idx_travel_requests_status_created", "status", "created_at"),
+        Index("idx_travel_requests_agency_status", "agency_id", "status"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    agency_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("agencies.id"), nullable=False, default=DEFAULT_AGENCY_ID, index=True
+    )
     first_name: Mapped[str] = mapped_column(String(80), nullable=False)
     last_name: Mapped[str] = mapped_column(String(80), nullable=False)
     email: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -107,9 +134,15 @@ class TravelRequest(Base):
 
 class Passenger(Base):
     __tablename__ = "passengers"
-    __table_args__ = (Index("idx_passengers_last_first", "last_name", "first_name"),)
+    __table_args__ = (
+        Index("idx_passengers_last_first", "last_name", "first_name"),
+        Index("idx_passengers_agency_active", "agency_id", "is_active"),
+    )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    agency_id: Mapped[str] = mapped_column(
+        String(36), ForeignKey("agencies.id"), nullable=False, default=DEFAULT_AGENCY_ID, index=True
+    )
     first_name: Mapped[str] = mapped_column(String(80), nullable=False)
     last_name: Mapped[str] = mapped_column(String(80), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)

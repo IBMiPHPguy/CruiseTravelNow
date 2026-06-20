@@ -6,6 +6,7 @@ from decimal import Decimal
 from math import ceil
 from statistics import median
 
+from sqlalchemy import String, and_, case, cast, exists, false, func, or_, select
 from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.constants import (
@@ -17,10 +18,10 @@ from app.constants import (
     PROPOSED_CRUISE_STATUS_REJECTED,
     REQUEST_STATUS_CLOSED,
     REQUEST_STATUS_OPEN,
-    WORKFLOW_STATUS_ACTIVE,
     TASK_STATUS_OPEN,
+    WORKFLOW_STATUS_ACTIVE,
 )
-from app.models import Passenger, ProposedCruise, RequestWorkflow, TravelRequest
+from app.models import Passenger, ProposedCruise, RequestTask, RequestWorkflow, TravelRequest, User
 from app.schemas import (
     AdvisorScorecardPageRead,
     AdvisorScorecardRowRead,
@@ -85,13 +86,50 @@ LOSS_SEGMENT_REJECTED_QUOTE = "rejected_quote"
 LOSS_SEGMENT_CLOSED_LOST = "closed_lost"
 
 
-def _reports_query(db: Session):
-    return db.query(TravelRequest).options(
+def _normalize_page(page: int, page_size: int) -> tuple[int, int, int]:
+    safe_page = max(1, page)
+    safe_page_size = max(1, min(page_size, REPORTS_PAGE_SIZE_MAX))
+    offset = (safe_page - 1) * safe_page_size
+    return safe_page, safe_page_size, offset
+
+
+def _pagination_meta(total: int, page: int, page_size: int) -> int:
+    if total == 0:
+        return 0
+    return ceil(total / page_size)
+
+
+def _reports_query(db: Session, filters: ReportQueryFilters | None = None):
+    query = db.query(TravelRequest).options(
         joinedload(TravelRequest.created_by),
         joinedload(TravelRequest.updated_by),
         selectinload(TravelRequest.proposed_cruises),
         selectinload(TravelRequest.request_workflows).selectinload(RequestWorkflow.tasks),
     )
+    if filters is not None:
+        query = _apply_travel_request_report_filters(query, filters)
+    return query
+
+
+def _passengers_filtered_query(db: Session, filters: ReportQueryFilters):
+    query = db.query(Passenger).filter(Passenger.is_active.is_(True))
+
+    if filters.state != "all":
+        query = query.filter(
+            func.lower(func.trim(Passenger.state_or_province)) == filters.state.casefold()
+        )
+
+    if filters.qualifiers:
+        query = query.filter(
+            or_(
+                *[
+                    cast(Passenger.qualifiers, String).like(f'%"{qualifier}"%')
+                    for qualifier in filters.qualifiers
+                ]
+            )
+        )
+
+    return query
 
 
 def _cruise_total_commission(cruise: ProposedCruise) -> float:
@@ -115,6 +153,113 @@ def _timeframe_start(timeframe: str) -> datetime | None:
     if timeframe == "current_year":
         return datetime(today.year, 1, 1)
     return None
+
+
+def _apply_timeframe_filter(query, timeframe: str):
+    timeframe_start = _timeframe_start(timeframe)
+    if timeframe_start is not None:
+        query = query.filter(TravelRequest.created_at >= timeframe_start)
+    return query.filter(TravelRequest.created_at.isnot(None))
+
+
+def _parse_workflow_task_key(workflow_task: str) -> str | None:
+    if not workflow_task or workflow_task == "all":
+        return None
+    if workflow_task.startswith("task:"):
+        return workflow_task.split(":", 1)[1]
+    return workflow_task
+
+
+def _first_open_task_key_subquery():
+    return (
+        select(RequestTask.task_key)
+        .select_from(RequestTask)
+        .join(RequestWorkflow, RequestTask.request_workflow_id == RequestWorkflow.id)
+        .where(
+            RequestWorkflow.travel_request_id == TravelRequest.id,
+            RequestWorkflow.status == WORKFLOW_STATUS_ACTIVE,
+            RequestTask.status == TASK_STATUS_OPEN,
+        )
+        .order_by(RequestTask.sort_order.asc())
+        .limit(1)
+        .correlate(TravelRequest)
+        .scalar_subquery()
+    )
+
+
+def _lead_cruise_line_subquery():
+    return (
+        select(ProposedCruise.cruise_line)
+        .where(ProposedCruise.travel_request_id == TravelRequest.id)
+        .order_by(
+            case(
+                (ProposedCruise.status.in_(BOOKED_CRUISE_STATUSES), 1),
+                (ProposedCruise.status.in_(ACTIVE_QUOTE_STATUSES), 2),
+                (ProposedCruise.status == PROPOSED_CRUISE_STATUS_REJECTED, 3),
+                else_=4,
+            ),
+            ProposedCruise.cost.desc(),
+        )
+        .limit(1)
+        .correlate(TravelRequest)
+        .scalar_subquery()
+    )
+
+
+def _request_prefers_cruise_line(cruise_line: str):
+    return cast(TravelRequest.cruise_lines, String).like(f'%"{cruise_line}"%')
+
+
+def _apply_cruise_line_filter(query, cruise_line: str):
+    if not cruise_line or cruise_line == "all":
+        return query
+    if cruise_line not in CRUISE_LINES:
+        return query.filter(false())
+
+    lead_line = _lead_cruise_line_subquery()
+    has_proposed_cruises = exists(
+        select(ProposedCruise.id).where(ProposedCruise.travel_request_id == TravelRequest.id)
+    )
+    return query.filter(
+        or_(
+            lead_line == cruise_line,
+            and_(~has_proposed_cruises, _request_prefers_cruise_line(cruise_line)),
+        )
+    )
+
+
+def _apply_travel_request_report_filters(query, filters: ReportQueryFilters):
+    query = _apply_timeframe_filter(query, filters.timeframe)
+
+    if filters.pipeline_status == "open":
+        query = query.filter(TravelRequest.status == REQUEST_STATUS_OPEN)
+    elif filters.pipeline_status == "closed":
+        query = query.filter(TravelRequest.status == REQUEST_STATUS_CLOSED)
+
+    task_key = _parse_workflow_task_key(filters.workflow_task)
+    if task_key is not None:
+        query = query.filter(_first_open_task_key_subquery() == task_key)
+
+    return _apply_cruise_line_filter(query, filters.cruise_line)
+
+
+def _deposited_cruises_query(db: Session, filters: ReportQueryFilters):
+    query = (
+        db.query(ProposedCruise)
+        .join(TravelRequest, TravelRequest.id == ProposedCruise.travel_request_id)
+        .filter(
+            ProposedCruise.status == PROPOSED_CRUISE_STATUS_DEPOSITED,
+            TravelRequest.created_at.isnot(None),
+        )
+    )
+    query = _apply_timeframe_filter(query, filters.timeframe)
+
+    if filters.cruise_line and filters.cruise_line != "all":
+        if filters.cruise_line not in CRUISE_LINES:
+            return query.filter(false())
+        query = query.filter(ProposedCruise.cruise_line == filters.cruise_line)
+
+    return query
 
 
 def _request_pipeline_bucket(request: TravelRequest) -> str:
@@ -145,95 +290,6 @@ def _lead_cruise(cruises: list[ProposedCruise]) -> ProposedCruise | None:
     if rejected:
         return max(rejected, key=lambda cruise: float(cruise.cost or 0))
     return None
-
-
-def _matches_supplier_filter(
-    request: TravelRequest,
-    lead_cruise: ProposedCruise | None,
-    cruise_line: str,
-) -> bool:
-    if not cruise_line or cruise_line == "all":
-        return True
-
-    if cruise_line not in CRUISE_LINES:
-        return False
-
-    if lead_cruise is not None:
-        return lead_cruise.cruise_line == cruise_line
-
-    preferred_lines = request.cruise_lines or []
-    return cruise_line in preferred_lines
-
-
-def _matches_workflow_task(request: TravelRequest, workflow_task: str) -> bool:
-    if not workflow_task or workflow_task == "all":
-        return True
-
-    task_key = workflow_task.split(":", 1)[1] if workflow_task.startswith("task:") else workflow_task
-
-    active_workflow = next(
-        (workflow for workflow in request.request_workflows if workflow.status == WORKFLOW_STATUS_ACTIVE),
-        None,
-    )
-    if active_workflow is None:
-        return False
-
-    open_tasks = sorted(
-        (task for task in active_workflow.tasks if task.status == TASK_STATUS_OPEN),
-        key=lambda task: task.sort_order,
-    )
-    if not open_tasks:
-        return False
-    return open_tasks[0].task_key == task_key
-
-
-def _supplier_ledger_request_matches_filters(request: TravelRequest, filters: ReportQueryFilters) -> bool:
-    created_at = request.created_at
-    if created_at is None:
-        return False
-
-    timeframe_start = _timeframe_start(filters.timeframe)
-    if timeframe_start is not None and created_at < timeframe_start:
-        return False
-
-    deposited_cruises = [
-        cruise
-        for cruise in (request.proposed_cruises or [])
-        if cruise.status == PROPOSED_CRUISE_STATUS_DEPOSITED
-    ]
-    if not deposited_cruises:
-        return False
-
-    if filters.cruise_line and filters.cruise_line != "all":
-        if filters.cruise_line not in CRUISE_LINES:
-            return False
-        return any(cruise.cruise_line == filters.cruise_line for cruise in deposited_cruises)
-
-    return True
-
-
-def _request_matches_filters(request: TravelRequest, filters: ReportQueryFilters) -> bool:
-    created_at = request.created_at
-    if created_at is None:
-        return False
-
-    timeframe_start = _timeframe_start(filters.timeframe)
-    if timeframe_start is not None and created_at < timeframe_start:
-        return False
-
-    cruises = list(request.proposed_cruises or [])
-    bucket = _request_pipeline_bucket(request)
-    if filters.pipeline_status != "all" and bucket != filters.pipeline_status:
-        return False
-
-    lead_cruise = _lead_cruise(cruises)
-    if not _matches_supplier_filter(request, lead_cruise, filters.cruise_line):
-        return False
-
-    if not _matches_workflow_task(request, filters.workflow_task):
-        return False
-
-    return True
 
 
 def _format_sailing_month_year(departure_date: date | None) -> str:
@@ -291,10 +347,9 @@ def _build_manifest_row(request: TravelRequest) -> ReportManifestRowRead:
 
 
 def _paginate[T](items: list[T], page: int, page_size: int) -> tuple[list[T], int, int, int]:
-    page = max(1, page)
-    page_size = max(1, min(page_size, REPORTS_PAGE_SIZE_MAX))
+    page, page_size, _offset = _normalize_page(page, page_size)
     total = len(items)
-    total_pages = 0 if total == 0 else ceil(total / page_size)
+    total_pages = _pagination_meta(total, page, page_size)
     start = (page - 1) * page_size
     return items[start : start + page_size], total, page, total_pages
 
@@ -320,15 +375,35 @@ def get_report_meta(db: Session) -> ReportMetaResponse:
             )
         )
 
-    requests = _reports_query(db).all()
-    advisor_names = sorted(
-        {_owner_agent(request) for request in requests if _owner_agent(request) != "—"}
-    )
+    updated_advisors = {
+        username
+        for (username,) in db.query(User.username)
+        .join(TravelRequest, TravelRequest.updated_by_id == User.id)
+        .all()
+        if username
+    }
+    created_advisors = {
+        username
+        for (username,) in db.query(User.username)
+        .join(TravelRequest, TravelRequest.created_by_id == User.id)
+        .all()
+        if username
+    }
+    advisor_names = sorted(updated_advisors | created_advisors)
     residence_states = sorted(
         {
-            passenger.state_or_province.strip()
-            for passenger in db.query(Passenger).filter(Passenger.is_active.is_(True)).all()
-            if passenger.state_or_province and passenger.state_or_province.strip()
+            state.strip()
+            for (state,) in (
+                db.query(Passenger.state_or_province)
+                .filter(
+                    Passenger.is_active.is_(True),
+                    Passenger.state_or_province.isnot(None),
+                    func.trim(Passenger.state_or_province) != "",
+                )
+                .distinct()
+                .all()
+            )
+            if state and state.strip()
         }
     )
 
@@ -340,16 +415,22 @@ def get_report_meta(db: Session) -> ReportMetaResponse:
 
 
 def get_sales_manifest_page(db: Session, filters: ReportQueryFilters) -> SalesManifestPageRead:
-    requests = _reports_query(db).order_by(TravelRequest.created_at.desc()).all()
-    matching = [request for request in requests if _request_matches_filters(request, filters)]
-    rows = [_build_manifest_row(request) for request in matching]
-    page_items, total, page, total_pages = _paginate(rows, filters.page, filters.page_size)
+    page, page_size, offset = _normalize_page(filters.page, filters.page_size)
+    base = _reports_query(db, filters)
+    total = base.order_by(None).count()
+    requests = (
+        base.order_by(TravelRequest.created_at.desc())
+        .offset(offset)
+        .limit(page_size)
+        .all()
+    )
+    rows = [_build_manifest_row(request) for request in requests]
     return SalesManifestPageRead(
-        items=page_items,
+        items=rows,
         total=total,
         page=page,
-        page_size=filters.page_size,
-        total_pages=total_pages,
+        page_size=page_size,
+        total_pages=_pagination_meta(total, page, page_size),
     )
 
 
@@ -359,38 +440,34 @@ def _median_booking_amount(values: list[float]) -> float:
     return float(median(values))
 
 
-def _build_supplier_ledger_rows(
-    requests: list[TravelRequest],
-    cruise_line: str = "all",
+def _build_supplier_ledger_rows_from_aggregates(
+    aggregates: list[tuple[str, int, float | Decimal | None]],
+    cruises: list[ProposedCruise],
 ) -> list[ReportSupplierLedgerRowRead]:
-    costs_by_line: dict[str, list[float]] = {}
     commission_by_line: dict[str, Decimal] = {}
+    costs_by_line: dict[str, list[float]] = {}
+    for cruise in cruises:
+        line = (cruise.cruise_line or "Unknown").strip() or "Unknown"
+        costs_by_line.setdefault(line, []).append(float(cruise.cost or 0))
+        commission_by_line.setdefault(line, Decimal("0"))
+        commission_by_line[line] += Decimal(str(_cruise_total_commission(cruise)))
 
-    for request in requests:
-        for cruise in request.proposed_cruises or []:
-            if cruise.status != PROPOSED_CRUISE_STATUS_DEPOSITED:
-                continue
-            line = (cruise.cruise_line or "Unknown").strip() or "Unknown"
-            if cruise_line != "all" and line != cruise_line:
-                continue
-            costs_by_line.setdefault(line, []).append(float(cruise.cost or 0))
-            commission_by_line.setdefault(line, Decimal("0"))
-            commission_by_line[line] += Decimal(str(_cruise_total_commission(cruise)))
-
-    total_bookings = sum(len(costs) for costs in costs_by_line.values())
+    total_bookings = sum(booking_count for _, booking_count, _ in aggregates)
     rows: list[ReportSupplierLedgerRowRead] = []
-    for line in sorted(costs_by_line.keys(), key=lambda name: (-len(costs_by_line[name]), name)):
-        costs = costs_by_line[line]
-        booking_count = len(costs)
-        total_volume = float(sum(costs))
-        total_commission = float(commission_by_line[line])
-        median_price = _median_booking_amount(costs)
-        commission_rate = round((total_commission / total_volume) * 100, 1) if total_volume else 0.0
+    for cruise_line, booking_count, total_volume in sorted(
+        aggregates,
+        key=lambda row: (-row[1], (row[0] or "Unknown")),
+    ):
+        line = (cruise_line or "Unknown").strip() or "Unknown"
+        total_volume_f = float(total_volume or 0)
+        total_commission = float(commission_by_line.get(line, Decimal("0")))
+        median_price = _median_booking_amount(costs_by_line.get(line, []))
+        commission_rate = round((total_commission / total_volume_f) * 100, 1) if total_volume_f else 0.0
         rows.append(
             ReportSupplierLedgerRowRead(
                 cruise_line=line,
                 active_booking_count=booking_count,
-                total_volume=total_volume,
+                total_volume=total_volume_f,
                 total_commission_booked=total_commission,
                 median_price_per_room=median_price,
                 average_commission_rate_percent=commission_rate,
@@ -401,9 +478,18 @@ def _build_supplier_ledger_rows(
 
 
 def get_supplier_ledger_page(db: Session, filters: ReportQueryFilters) -> SupplierLedgerPageRead:
-    requests = _reports_query(db).order_by(TravelRequest.created_at.desc()).all()
-    matching = [request for request in requests if _supplier_ledger_request_matches_filters(request, filters)]
-    rows = _build_supplier_ledger_rows(matching, filters.cruise_line)
+    base = _deposited_cruises_query(db, filters)
+    aggregates = (
+        base.with_entities(
+            ProposedCruise.cruise_line,
+            func.count(ProposedCruise.id),
+            func.sum(ProposedCruise.cost),
+        )
+        .group_by(ProposedCruise.cruise_line)
+        .all()
+    )
+    cruises = base.all()
+    rows = _build_supplier_ledger_rows_from_aggregates(aggregates, cruises)
     page_items, total, page, total_pages = _paginate(rows, filters.page, filters.page_size)
     return SupplierLedgerPageRead(
         items=page_items,
@@ -499,18 +585,12 @@ def _funnel_leak_matches_filters(row: FunnelLeakRowRead, filters: ReportQueryFil
 
 
 def get_funnel_leak_page(db: Session, filters: ReportQueryFilters) -> FunnelLeakPageRead:
-    requests = _reports_query(db).order_by(TravelRequest.created_at.desc()).all()
+    base = _apply_timeframe_filter(_reports_query(db), filters.timeframe)
+    requests = base.order_by(TravelRequest.created_at.desc()).all()
     booked_request_ids = _booked_request_ids_from(requests)
     rows: list[FunnelLeakRowRead] = []
 
     for request in requests:
-        created_at = request.created_at
-        if created_at is None:
-            continue
-        timeframe_start = _timeframe_start(filters.timeframe)
-        if timeframe_start is not None and created_at < timeframe_start:
-            continue
-
         row = _build_funnel_leak_row(request, booked_request_ids)
         if row is None:
             continue
@@ -593,7 +673,8 @@ def _build_advisor_scorecard_rows(requests: list[TravelRequest], filters: Report
 
 
 def get_advisor_scorecard_page(db: Session, filters: ReportQueryFilters) -> AdvisorScorecardPageRead:
-    requests = _reports_query(db).all()
+    base = _apply_timeframe_filter(_reports_query(db), filters.timeframe)
+    requests = base.all()
     rows = _build_advisor_scorecard_rows(requests, filters)
     page_items, total, page, total_pages = _paginate(rows, filters.page, filters.page_size)
     return AdvisorScorecardPageRead(
@@ -605,47 +686,32 @@ def get_advisor_scorecard_page(db: Session, filters: ReportQueryFilters) -> Advi
     )
 
 
-def _passenger_matches_filters(passenger: Passenger, filters: ReportQueryFilters) -> bool:
-    if not passenger.is_active:
-        return False
-
-    if filters.qualifiers:
-        passenger_qualifiers = set(passenger.qualifiers or [])
-        if not passenger_qualifiers.intersection(filters.qualifiers):
-            return False
-
-    if filters.state != "all":
-        passenger_state = (passenger.state_or_province or "").strip()
-        if passenger_state.casefold() != filters.state.casefold():
-            return False
-
-    return True
-
-
 def get_passenger_demographics_page(db: Session, filters: ReportQueryFilters) -> PassengerDemographicsPageRead:
-    passengers = db.query(Passenger).order_by(Passenger.last_name.asc(), Passenger.first_name.asc()).all()
-    rows: list[PassengerDemographicsRowRead] = []
-
-    for passenger in passengers:
-        if not _passenger_matches_filters(passenger, filters):
-            continue
-        rows.append(
-            PassengerDemographicsRowRead(
-                passenger_id=passenger.id,
-                passenger_name=f"{passenger.first_name} {passenger.last_name}".strip(),
-                date_of_birth=passenger.date_of_birth.isoformat() if passenger.date_of_birth else None,
-                state_of_residence=passenger.state_or_province,
-                contact_phone=passenger.phone,
-                email_address=passenger.email,
-                qualifiers=list(passenger.qualifiers or []),
-            )
+    page, page_size, offset = _normalize_page(filters.page, filters.page_size)
+    base = _passengers_filtered_query(db, filters)
+    total = base.order_by(None).count()
+    passengers = (
+        base.order_by(Passenger.last_name.asc(), Passenger.first_name.asc(), Passenger.id.asc())
+        .offset(offset)
+        .limit(page_size)
+        .all()
+    )
+    rows = [
+        PassengerDemographicsRowRead(
+            passenger_id=passenger.id,
+            passenger_name=f"{passenger.first_name} {passenger.last_name}".strip(),
+            date_of_birth=passenger.date_of_birth.isoformat() if passenger.date_of_birth else None,
+            state_of_residence=passenger.state_or_province,
+            contact_phone=passenger.phone,
+            email_address=passenger.email,
+            qualifiers=list(passenger.qualifiers or []),
         )
-
-    page_items, total, page, total_pages = _paginate(rows, filters.page, filters.page_size)
+        for passenger in passengers
+    ]
     return PassengerDemographicsPageRead(
-        items=page_items,
+        items=rows,
         total=total,
         page=page,
-        page_size=filters.page_size,
-        total_pages=total_pages,
+        page_size=page_size,
+        total_pages=_pagination_meta(total, page, page_size),
     )

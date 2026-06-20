@@ -124,6 +124,7 @@ class UserRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    agency_id: str
     username: str
     email: EmailStr
 
