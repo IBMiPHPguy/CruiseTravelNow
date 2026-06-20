@@ -1,5 +1,4 @@
 import { FormEvent, useEffect, useState } from "react";
-import NoteChangeHistoryPanel from "./NoteChangeHistoryPanel";
 import { emptyNoteForm, NOTE_SUMMARY_MAX_LENGTH, noteToForm } from "./noteForm";
 import type { RequestNote, RequestNoteInput } from "./types";
 
@@ -60,34 +59,34 @@ export default function NoteModal({
 
         <form className="modal-form-layout" onSubmit={handleSubmit}>
           <div className="modal-scroll-body note-form">
-            <label>
-              Summary
-              <input
-                required
-                maxLength={NOTE_SUMMARY_MAX_LENGTH}
-                disabled={disabled || saving}
-                value={form.summary}
-                placeholder="Short description shown in the notes list"
-                onChange={(event) => setForm({ ...form, summary: event.target.value })}
-              />
-            </label>
-            <div className="field-hint">
-              {form.summary.length}/{NOTE_SUMMARY_MAX_LENGTH} characters
+            <div className="modal-section-panel">
+              <label>
+                Summary
+                <input
+                  required
+                  maxLength={NOTE_SUMMARY_MAX_LENGTH}
+                  disabled={disabled || saving}
+                  value={form.summary}
+                  placeholder="Short description shown in the notes list"
+                  onChange={(event) => setForm({ ...form, summary: event.target.value })}
+                />
+              </label>
+              <div className="field-hint">
+                {form.summary.length}/{NOTE_SUMMARY_MAX_LENGTH} characters
+              </div>
+
+              <label>
+                Note
+                <textarea
+                  required
+                  rows={8}
+                  disabled={disabled || saving}
+                  value={form.content}
+                  placeholder="Enter the full note details"
+                  onChange={(event) => setForm({ ...form, content: event.target.value })}
+                />
+              </label>
             </div>
-
-            <label>
-              Note
-              <textarea
-                required
-                rows={8}
-                disabled={disabled || saving}
-                value={form.content}
-                placeholder="Enter the full note details"
-                onChange={(event) => setForm({ ...form, content: event.target.value })}
-              />
-            </label>
-
-            {note && note.audits.length > 0 ? <NoteChangeHistoryPanel audits={note.audits} /> : null}
           </div>
 
           <div className="modal-actions modal-actions-footer">
@@ -95,7 +94,7 @@ export default function NoteModal({
               Cancel
             </button>
             {!disabled ? (
-              <button type="submit" disabled={saving || !form.summary.trim() || !form.content.trim()}>
+              <button type="submit" className="modal-primary" disabled={saving || !form.summary.trim() || !form.content.trim()}>
                 {saving ? "Saving..." : note ? "Save note" : "Add note"}
               </button>
             ) : null}

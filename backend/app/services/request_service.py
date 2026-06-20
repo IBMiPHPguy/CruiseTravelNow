@@ -15,6 +15,9 @@ from app.audit_helpers import (
 )
 from app.constants import (
     PRIMARY_CLOSE_REASON,
+    PROPOSED_CRUISE_STATUS_ACCEPTED,
+    PROPOSED_CRUISE_STATUS_DEPOSITED,
+    PROPOSED_CRUISE_STATUS_PROPOSED,
     REQUEST_STATUS_CLOSED,
     REQUEST_STATUS_OPEN,
     STALE_DAYS,
@@ -301,6 +304,30 @@ def closed_requests_total_pages(total: int, page_size: int) -> int:
     if total <= 0:
         return 0
     return ceil(total / page_size)
+
+
+ACTIVE_PIPELINE_QUOTE_STATUSES = (
+    PROPOSED_CRUISE_STATUS_PROPOSED,
+    PROPOSED_CRUISE_STATUS_ACCEPTED,
+    PROPOSED_CRUISE_STATUS_DEPOSITED,
+)
+
+
+def calculate_open_pipeline_value(db: Session) -> float:
+    """Sum the highest active proposed-quote cost for each open request."""
+    per_request_max = (
+        db.query(
+            ProposedCruise.travel_request_id,
+            func.max(ProposedCruise.cost).label("max_cost"),
+        )
+        .join(TravelRequest, TravelRequest.id == ProposedCruise.travel_request_id)
+        .filter(TravelRequest.status == REQUEST_STATUS_OPEN)
+        .filter(ProposedCruise.status.in_(ACTIVE_PIPELINE_QUOTE_STATUSES))
+        .group_by(ProposedCruise.travel_request_id)
+        .subquery()
+    )
+    total = db.query(func.coalesce(func.sum(per_request_max.c.max_cost), 0)).scalar()
+    return float(total or 0)
 
 
 def search_open_requests(

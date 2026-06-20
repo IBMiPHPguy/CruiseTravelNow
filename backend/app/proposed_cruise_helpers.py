@@ -2,12 +2,55 @@ from __future__ import annotations
 
 from decimal import Decimal
 
+from fastapi import HTTPException
+
+from app.constants import (
+    PROPOSED_CRUISE_REJECTION_REASON_OTHER,
+    PROPOSED_CRUISE_REJECTION_REASONS,
+    PROPOSED_CRUISE_STATUS_REJECTED,
+)
 from app.models import ProposedCruise, default_proposed_cruise_includes
 from app.schemas import CabinPricingEntry, ProposedCruiseIncludes, ProposedCruiseRoom
 
 
 def default_proposed_cruise_includes_dict() -> dict:
     return default_proposed_cruise_includes()
+
+
+def normalize_rejection_reason_detail(value: str | None) -> str | None:
+    if value is None:
+        return None
+    stripped = value.strip()
+    return stripped or None
+
+
+def validate_proposed_cruise_rejection(
+    *,
+    status: str,
+    rejection_reason: str | None,
+    rejection_reason_detail: str | None,
+    require_reason: bool,
+) -> tuple[str | None, str | None]:
+    if status != PROPOSED_CRUISE_STATUS_REJECTED:
+        return None, None
+
+    if not require_reason:
+        if rejection_reason is None:
+            return None, None
+    elif not rejection_reason:
+        raise HTTPException(status_code=400, detail="Select a rejection reason.")
+
+    if rejection_reason and rejection_reason not in PROPOSED_CRUISE_REJECTION_REASONS:
+        raise HTTPException(status_code=400, detail="Invalid rejection reason selected.")
+
+    detail = normalize_rejection_reason_detail(rejection_reason_detail)
+    if rejection_reason == PROPOSED_CRUISE_REJECTION_REASON_OTHER and not detail:
+        raise HTTPException(status_code=400, detail="Enter a rejection reason when Other is selected.")
+
+    if rejection_reason != PROPOSED_CRUISE_REJECTION_REASON_OTHER:
+        detail = None
+
+    return rejection_reason, detail
 
 
 def serialize_includes_for_storage(includes: dict | ProposedCruiseIncludes) -> dict:

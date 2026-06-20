@@ -5,7 +5,11 @@ import {
   sanitizeCabinRoomsForPayload,
   syncLegacyFieldsFromCabinRooms,
 } from "./cabinRooms";
-import { normalizeCruiseLineValue } from "./formOptions";
+import { normalizeCruiseLineValue, PROPOSED_CRUISE_STATUS_REJECTED } from "./formOptions";
+import {
+  buildProposedCruiseRejectionPayload,
+  type ProposedCruiseRejectionInput,
+} from "./proposedCruiseRejection";
 import type { ProposedCruise, ProposedCruiseIncludes, ProposedCruiseInput } from "./types";
 import {
   flattenRoomPassengerIds,
@@ -70,6 +74,15 @@ export function proposedCruiseToForm(cruise: ProposedCruise, cabinsNeeded = 1): 
     cabin_pricing: legacy.cabin_pricing,
     cabin_rooms: cabinRooms,
     status: cruise.status,
+    rejection_reason: cruise.rejection_reason ?? "",
+    rejection_reason_detail: cruise.rejection_reason_detail ?? "",
+  };
+}
+
+function proposedCruiseRejectionFromForm(form: ProposedCruiseInput): ProposedCruiseRejectionInput {
+  return {
+    rejection_reason: (form.rejection_reason ?? "") as ProposedCruiseRejectionInput["rejection_reason"],
+    rejection_reason_detail: form.rejection_reason_detail ?? "",
   };
 }
 
@@ -88,7 +101,7 @@ export function buildProposedCruisePayload(form: ProposedCruiseInput, cabinsNeed
   const legacy = syncLegacyFieldsFromCabinRooms(cabinRooms);
   const roomPassengerIds = normalizeRoomPassengerIds(form.room_passenger_ids, cabinsNeeded);
 
-  return {
+  const base: ProposedCruiseInput = {
     ...form,
     itinerary_details: form.itinerary_details?.trim() || null,
     room_category: legacy.room_category,
@@ -102,6 +115,15 @@ export function buildProposedCruisePayload(form: ProposedCruiseInput, cabinsNeed
     room_passenger_ids: roomPassengerIds,
     passenger_ids: flattenRoomPassengerIds(roomPassengerIds),
   };
+
+  if (form.status === PROPOSED_CRUISE_STATUS_REJECTED && form.rejection_reason) {
+    return {
+      ...base,
+      ...buildProposedCruiseRejectionPayload(proposedCruiseRejectionFromForm(form)),
+    };
+  }
+
+  return base;
 }
 
 export function proposedCruiseStatusClass(status: string): string {

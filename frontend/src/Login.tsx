@@ -53,7 +53,9 @@ export default function Login({ onAuthenticated }: LoginProps) {
   return (
     <main className="page auth-page">
       <section className="card auth-card">
-        <h1>{BRAND_APP_TITLE}</h1>
+        <div className="auth-brand">
+          <img src="/sailspipeline-logo.png" alt={BRAND_APP_TITLE} className="auth-logo" />
+        </div>
         <p className="auth-subtitle">Sign in to manage cruise travel requests.</p>
 
         <div className="auth-toggle">

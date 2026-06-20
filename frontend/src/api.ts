@@ -2,7 +2,10 @@ import { authHeaders, parseApiError } from "./apiClient";
 import type {
   Attachment,
   AttachmentKind,
+  ClientCreateInput,
   ClientDetail,
+  ClientImportParseResponse,
+  ClientImportResult,
   ClientListItem,
   ClientsPage,
   ClientUpdateInput,
@@ -10,6 +13,8 @@ import type {
   DashboardData,
   DashboardOpenRequest,
   OpenRequestsPage,
+  SalesAnalyticsData,
+  SalesAnalyticsYearSummary,
   RequestNote,
   RequestNoteInput,
   RequestPassenger,
@@ -40,9 +45,99 @@ export async function fetchDashboard(): Promise<DashboardData> {
     headers: authHeaders(),
   });
   if (!response.ok) {
-    throw new Error(await parseApiError(response, "Unable to load dashboard."));
+    throw new Error(await parseApiError(response, "Unable to load request dashboard."));
   }
   return response.json();
+}
+
+export async function fetchSalesAnalytics(): Promise<SalesAnalyticsData> {
+  const response = await fetch(`${API_BASE}/analytics/sales`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response, "Unable to load sales analytics."));
+  }
+  return response.json();
+}
+
+export async function fetchSalesAnalyticsKeyMetrics(year: number): Promise<SalesAnalyticsYearSummary> {
+  const response = await fetch(`${API_BASE}/analytics/sales/key-metrics/${year}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response, `Unable to load ${year} key metrics.`));
+  }
+  return response.json();
+}
+
+export async function downloadClientImportTemplate(): Promise<void> {
+  const response = await fetch(`${API_BASE}/analytics/sales/client-import/template`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response, "Unable to download the client migration template."));
+  }
+
+  const blob = await response.blob();
+  const disposition = response.headers.get("Content-Disposition") ?? "";
+  const filenameMatch = disposition.match(/filename="([^"]+)"/i);
+  const filename = filenameMatch?.[1] ?? "SailsPipeline-Client-Migration-Template.xlsx";
+  const objectUrl = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
+export async function parseClientImportFile(file: File): Promise<ClientImportParseResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+
+  const response = await fetch(`${API_BASE}/analytics/sales/client-import/parse`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: formData,
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response, "Unable to read the uploaded spreadsheet."));
+  }
+  return response.json();
+}
+
+export async function importClientSpreadsheet(
+  file: File,
+  mapping: Record<string, string | null>,
+): Promise<ClientImportResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("mapping", JSON.stringify(mapping));
+
+  const response = await fetch(`${API_BASE}/analytics/sales/client-import`, {
+    method: "POST",
+    headers: authHeaders(),
+    body: formData,
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response, "Unable to import clients."));
+  }
+  return response.json();
+}
+
+export async function askSalesCopilot(question: string): Promise<string> {
+  const response = await fetch(`${API_BASE}/analytics/sales/copilot`, {
+    method: "POST",
+    headers: {
+      ...authHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ question }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response, "Unable to get a copilot answer."));
+  }
+  const payload = (await response.json()) as { answer: string };
+  return payload.answer;
 }
 
 export type OpenRequestsQuery = {
@@ -242,6 +337,26 @@ export async function uploadChatLog(requestId: number, file: File): Promise<Atta
   return response.json();
 }
 
+export async function generateCommunicationAiSummary(
+  requestId: number,
+  kind: AttachmentKind,
+  attachmentId: number,
+): Promise<RequestNoteInput> {
+  const response = await fetch(
+    `${API_BASE}/requests/${requestId}/${kind}/${attachmentId}/ai-summary`,
+    {
+      method: "POST",
+      headers: authHeaders(),
+    },
+  );
+
+  if (!response.ok) {
+    throw new Error(await parseApiError(response, "Unable to generate AI summary."));
+  }
+
+  return response.json();
+}
+
 export async function fetchAttachmentContent(
   requestId: number,
   kind: AttachmentKind,
@@ -309,6 +424,18 @@ export async function fetchClient(clientId: number): Promise<ClientDetail> {
   });
   if (!response.ok) {
     throw new Error(await parseApiError(response, "Unable to load client."));
+  }
+  return response.json();
+}
+
+export async function createClient(payload: ClientCreateInput): Promise<ClientDetail> {
+  const response = await fetch(`${API_BASE}/passengers`, {
+    method: "POST",
+    headers: authHeaders(true),
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response, "Unable to add client."));
   }
   return response.json();
 }

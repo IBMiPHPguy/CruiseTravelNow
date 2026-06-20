@@ -193,7 +193,7 @@ export default function PassengerPickerModal({
 
           <div className="passenger-picker-divider" role="separator" aria-hidden="true" />
 
-          <div className="passenger-picker-new">
+          <div className="passenger-picker-new modal-section-panel">
             <p className="passenger-picker-new-heading">{newSectionHeading}</p>
             <p className="field-hint">Enter details below to add someone who is not in the system yet.</p>
             <PassengerFields
@@ -209,7 +209,7 @@ export default function PassengerPickerModal({
           <button type="button" className="modal-secondary" disabled={saving} onClick={onClose}>
             Cancel
           </button>
-          <button type="button" disabled={saving || !canCreateNew} onClick={() => void handleCreateNew()}>
+          <button type="button" className="modal-primary" disabled={saving || !canCreateNew} onClick={() => void handleCreateNew()}>
             {saving ? "Saving..." : "Add new passenger"}
           </button>
         </div>

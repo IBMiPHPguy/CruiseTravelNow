@@ -70,15 +70,30 @@ export default function ResearchDocumentReaderModal({
         <header className="modal-card-header">
           <h3 id="research-document-reader-title">Research document</h3>
         </header>
-        <div className="attachment-reader-meta meta">
-          {document.original_filename} · {formatFileSize(document.size_bytes)} · Uploaded by{" "}
-          {document.uploaded_by.username} · {formatTimestamp(document.created_at)}
+        <div className="modal-meta-row attachment-reader-meta">
+          <span>{document.original_filename}</span>
+          <span className="modal-meta-separator" aria-hidden="true">
+            |
+          </span>
+          <span>{formatFileSize(document.size_bytes)}</span>
+          <span className="modal-meta-separator" aria-hidden="true">
+            |
+          </span>
+          <span>Uploaded by {document.uploaded_by.username}</span>
+          <span className="modal-meta-separator" aria-hidden="true">
+            |
+          </span>
+          <span>{formatTimestamp(document.created_at)}</span>
         </div>
 
         <div className="attachment-reader-body">
           {loading ? <p>Loading file...</p> : null}
           {error ? <p className="status error">{error}</p> : null}
-          {!loading && !error ? <pre className="attachment-reader-content">{content}</pre> : null}
+          {!loading && !error ? (
+            <div className="modal-section-panel">
+              <pre className="attachment-reader-content">{content}</pre>
+            </div>
+          ) : null}
         </div>
 
         <div className="modal-actions modal-actions-footer attachment-reader-actions">

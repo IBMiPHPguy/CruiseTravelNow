@@ -56,7 +56,7 @@ function TaskGuidance({ taskKey }: { taskKey: string }) {
   }
 
   return (
-    <div className="workflow-task-guidance">
+    <div className="modal-section-panel workflow-task-guidance">
       <p>{hint}</p>
     </div>
   );
@@ -127,9 +127,16 @@ export default function WorkflowTaskModal({
 
         <div className="modal-scroll-body workflow-task-modal-body">
           {isDone && task.completed_by ? (
-            <p className="workflow-task-modal-completed meta">
-              Completed by {task.completed_by.username}
-              {task.completed_at ? ` · ${formatTimestamp(task.completed_at)}` : ""}
+            <p className="modal-meta-row workflow-task-modal-completed">
+              <span>Completed by {task.completed_by.username}</span>
+              {task.completed_at ? (
+                <>
+                  <span className="modal-meta-separator" aria-hidden="true">
+                    |
+                  </span>
+                  <span>{formatTimestamp(task.completed_at)}</span>
+                </>
+              ) : null}
             </p>
           ) : null}
 
@@ -151,7 +158,7 @@ export default function WorkflowTaskModal({
           ) : null}
 
           {task.task_key === TASK_KEY_UPLOAD_RESEARCH_DOCUMENT && request.research_documents.length > 0 ? (
-            <div className="workflow-task-guidance">
+            <div className="modal-section-panel workflow-task-guidance">
               <p>
                 {request.research_documents.length} research document
                 {request.research_documents.length === 1 ? "" : "s"} on file. View them in Research Documents on the
@@ -303,7 +310,7 @@ export default function WorkflowTaskModal({
           ) : null}
 
           {task.task_key === TASK_KEY_CREATE_PROPOSED_CRUISES && request.proposed_cruises.length > 0 ? (
-            <div className="workflow-task-guidance">
+            <div className="modal-section-panel workflow-task-guidance">
               <p>
                 {request.proposed_cruises.length} proposed cruise
                 {request.proposed_cruises.length === 1 ? "" : "s"} on the request.
@@ -341,7 +348,7 @@ export default function WorkflowTaskModal({
             </button>
           ) : null}
           {!disabled && !isDone && !usesCustomSave ? (
-            <button type="button" disabled={saving || uploadingResearch} onClick={() => void onMarkDone()}>
+            <button type="button" className="modal-primary" disabled={saving || uploadingResearch} onClick={() => void onMarkDone()}>
               {saving ? "Saving..." : "Mark task done"}
             </button>
           ) : null}

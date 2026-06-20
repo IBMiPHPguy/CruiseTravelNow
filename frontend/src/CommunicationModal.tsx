@@ -12,6 +12,7 @@ import {
   communicationToForm,
   emptyCommunicationForm,
 } from "./workflowForm";
+import CommunicationBodyField from "./CommunicationBodyField";
 import type { RequestCommunication, RequestCommunicationInput } from "./types";
 
 type CommunicationModalProps = {
@@ -83,6 +84,7 @@ export default function CommunicationModal({
 
         <form className="modal-form-layout" onSubmit={handleSubmit}>
           <div className="modal-scroll-body communication-form">
+            <div className="modal-section-panel">
             <label>
               Type
               <select
@@ -108,20 +110,13 @@ export default function CommunicationModal({
               />
             </label>
 
-            <label>
-              Message
-              <textarea
-                required
-                rows={12}
-                disabled={disabled || saving}
-                value={form.body}
-                placeholder="Paste the communication content here"
-                onChange={(event) => setForm({ ...form, body: event.target.value })}
-              />
-            </label>
-            <p className="field-hint">
-              Paste rich text or formatted content from your email client. Formatting will be preserved as entered.
-            </p>
+            <CommunicationBodyField
+              body={form.body}
+              disabled={disabled}
+              saving={saving}
+              resetKey={communication?.id ?? "new"}
+              onChange={(body) => setForm({ ...form, body })}
+            />
 
             <label>
               Status
@@ -134,6 +129,7 @@ export default function CommunicationModal({
                 <option value={COMMUNICATION_STATUS_SENT}>Sent</option>
               </select>
             </label>
+            </div>
           </div>
 
           <div className="modal-actions modal-actions-footer">
@@ -151,7 +147,7 @@ export default function CommunicationModal({
               Cancel
             </button>
             {!disabled ? (
-              <button type="submit" disabled={saving || !form.subject.trim() || !form.body.trim()}>
+              <button type="submit" className="modal-primary" disabled={saving || !form.subject.trim() || !form.body.trim()}>
                 {saving ? "Saving..." : communication ? "Save communication" : "Add communication"}
               </button>
             ) : null}

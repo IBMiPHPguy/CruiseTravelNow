@@ -20,6 +20,21 @@ export const emptyNoteForm: RequestNoteInput = {
 
 export const NOTE_SUMMARY_MAX_LENGTH = 160;
 
+export function buildQuickNoteInput(content: string): RequestNoteInput {
+  const trimmed = content.trim();
+  const firstLine = trimmed.split(/\r?\n/, 1)[0]?.trim() ?? "";
+  const summarySource = firstLine || "Intake note";
+  const summary =
+    summarySource.length > NOTE_SUMMARY_MAX_LENGTH
+      ? `${summarySource.slice(0, NOTE_SUMMARY_MAX_LENGTH - 1)}…`
+      : summarySource;
+
+  return {
+    summary,
+    content: trimmed,
+  };
+}
+
 export function noteToForm(note: RequestNote): RequestNoteInput {
   return {
     summary: note.summary,
@@ -94,6 +109,19 @@ export function flattenNoteAudits(audits: RequestNoteAudit[]): NoteHistoryEntry[
     }
     return left.field === "summary" ? -1 : 1;
   });
+}
+
+/** Excludes field initialization audits (null → value) from create records. */
+export function isTrueNoteChangeEntry(entry: NoteHistoryEntry): boolean {
+  return entry.fromValue !== null;
+}
+
+export function getTrueNoteChangeEntries(audits: RequestNoteAudit[]): NoteHistoryEntry[] {
+  return flattenNoteAudits(audits).filter(isTrueNoteChangeEntry);
+}
+
+export function hasTrueNoteChanges(audits: RequestNoteAudit[]): boolean {
+  return getTrueNoteChangeEntries(audits).length > 0;
 }
 
 export function buildNoteAuditSearchText(entry: NoteHistoryEntry): string {

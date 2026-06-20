@@ -1,13 +1,16 @@
 import { useEffect, useState } from "react";
 import { activateClient, deactivateClient, fetchClients } from "./api";
 import ChickenSwitchModal from "./ChickenSwitchModal";
+import ClientImportSuccessModal from "./ClientImportSuccessModal";
+import ClientImporterModal from "./ClientImporterModal";
 import ClientModal from "./ClientModal";
 import DeactivateIcon from "./DeactivateIcon";
 import EditIcon from "./EditIcon";
 import IconTooltip from "./IconTooltip";
 import InactiveClientBadge from "./InactiveClientBadge";
+import PassengerQualifierBadges from "./PassengerQualifierBadges";
 import ReopenIcon from "./ReopenIcon";
-import type { ClientListItem } from "./types";
+import type { ClientImportResult, ClientListItem } from "./types";
 import ViewIcon from "./ViewIcon";
 import { formatDate } from "./utils";
 
@@ -29,9 +32,13 @@ export default function ClientsPage() {
   const [registryCount, setRegistryCount] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
   const [modalClientId, setModalClientId] = useState<number | null>(null);
-  const [modalMode, setModalMode] = useState<"view" | "edit">("view");
+  const [modalMode, setModalMode] = useState<"view" | "edit" | "create">("view");
   const [pendingDeactivate, setPendingDeactivate] = useState<PendingDeactivateClient | null>(null);
   const [deactivatingId, setDeactivatingId] = useState<number | null>(null);
+  const [importerOpen, setImporterOpen] = useState(false);
+  const [importResult, setImportResult] = useState<ClientImportResult | null>(null);
+  const [importSuccessOpen, setImportSuccessOpen] = useState(false);
+  const [importError, setImportError] = useState("");
 
   async function loadClients(activeSearch: string, activePage: number) {
     setLoading(true);
@@ -72,6 +79,16 @@ export default function ClientsPage() {
   function openClient(clientId: number, mode: "view" | "edit") {
     setModalClientId(clientId);
     setModalMode(mode);
+  }
+
+  function openCreateClient() {
+    setModalClientId(null);
+    setModalMode("create");
+  }
+
+  function closeClientModal() {
+    setModalClientId(null);
+    setModalMode("view");
   }
 
   function requestDeactivateClient(client: ClientListItem) {
@@ -135,6 +152,18 @@ export default function ClientsPage() {
               {registryCount}
             </span>
           </div>
+          <div className="clients-table-card-header-actions">
+            <button
+              type="button"
+              className="clients-table-import-button"
+              onClick={() => setImporterOpen(true)}
+            >
+              Import Clients
+            </button>
+            <button type="button" className="clients-table-add-button" onClick={openCreateClient}>
+              Add Client
+            </button>
+          </div>
         </header>
         <div className="open-requests-table-card-body">
           <div className="clients-table-toolbar">
@@ -177,10 +206,15 @@ export default function ClientsPage() {
                         <tr key={client.id} className={client.is_active ? undefined : "clients-table-row-inactive"}>
                         <td>
                           <div className="clients-table-name">
-                            <span>
-                              {client.first_name} {client.last_name}
-                            </span>
-                            {!client.is_active ? <InactiveClientBadge /> : null}
+                            <div className="clients-table-name-row">
+                              <span>
+                                {client.first_name} {client.last_name}
+                              </span>
+                              {!client.is_active ? <InactiveClientBadge /> : null}
+                            </div>
+                            {client.qualifiers.length > 0 ? (
+                              <PassengerQualifierBadges qualifiers={client.qualifiers} />
+                            ) : null}
                           </div>
                         </td>
                         <td>{client.date_of_birth ? formatDate(client.date_of_birth) : "—"}</td>
@@ -274,13 +308,34 @@ export default function ClientsPage() {
         </div>
       </section>
 
-      {error ? <p className="status error">{error}</p> : null}
+      {error || importError ? <p className="status error">{error || importError}</p> : null}
+
+      <ClientImporterModal
+        open={importerOpen}
+        onClose={() => setImporterOpen(false)}
+        onError={(message) => setImportError(message)}
+        onImportComplete={(result) => {
+          setImportResult(result);
+          setImportSuccessOpen(true);
+          setImporterOpen(false);
+          setImportError("");
+          void loadClients(searchQuery, page);
+        }}
+      />
+      <ClientImportSuccessModal
+        open={importSuccessOpen}
+        result={importResult}
+        onClose={() => {
+          setImportSuccessOpen(false);
+          setImportResult(null);
+        }}
+      />
 
       <ClientModal
-        open={modalClientId !== null}
+        open={modalClientId !== null || modalMode === "create"}
         clientId={modalClientId}
         mode={modalMode}
-        onClose={() => setModalClientId(null)}
+        onClose={closeClientModal}
         onModeChange={setModalMode}
         onSaved={() => void loadClients(searchQuery, page)}
         onDeactivated={() => void loadClients(searchQuery, page)}

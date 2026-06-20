@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from app.constants import PRIMARY_CLOSE_REASON, REQUEST_STATUS_CLOSED, REQUEST_STATUS_OPEN
 from app.models import TravelRequest
 from app.schemas import DashboardResponse
-from app.services.request_service import build_dashboard_open_request, dashboard_query
+from app.services.request_service import build_dashboard_open_request, calculate_open_pipeline_value, dashboard_query
 
 
 def get_dashboard(db: Session) -> DashboardResponse:
@@ -25,6 +25,7 @@ def get_dashboard(db: Session) -> DashboardResponse:
     successful_sales_close_rate = (
         round((purchased_closed_count / closed_count) * 100, 1) if closed_count else None
     )
+    total_pipeline_value = calculate_open_pipeline_value(db)
 
     return DashboardResponse(
         open_count=open_count,
@@ -33,4 +34,5 @@ def get_dashboard(db: Session) -> DashboardResponse:
         purchased_closed_count=purchased_closed_count,
         other_closed_count=other_closed_count,
         successful_sales_close_rate=successful_sales_close_rate,
+        total_pipeline_value=total_pipeline_value,
     )

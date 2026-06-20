@@ -7,6 +7,7 @@ import {
   uploadResearchDocument,
 } from "./api";
 import CloseReasonPicker from "./CloseReasonPicker";
+import ProposedCruiseRejectionReasonFields from "./ProposedCruiseRejectionReasonFields";
 import ResearchUploadPanel from "./ResearchUploadPanel";
 import {
   PROPOSED_CRUISE_STATUS_ACCEPTED,
@@ -20,6 +21,12 @@ import {
   WORKFLOW_TYPE_RESEARCH,
 } from "./formOptions";
 import type { ProposedCruise, RequestWorkflow } from "./types";
+import {
+  buildProposedCruiseRejectionPayload,
+  EMPTY_PROPOSED_CRUISE_REJECTION,
+  type ProposedCruiseRejectionInput,
+  validateProposedCruiseRejectionInput,
+} from "./proposedCruiseRejection";
 import { formatDate } from "./utils";
 import { TASK_STATUS_OPEN } from "./workflowForm";
 
@@ -70,6 +77,7 @@ export default function RecordClientResponseTaskPanel({
   const [decisions, setDecisions] = useState<Record<number, CruiseDecision | typeof PROPOSED_CRUISE_STATUS_PROPOSED>>(
     {},
   );
+  const [rejectionInputs, setRejectionInputs] = useState<Record<number, ProposedCruiseRejectionInput>>({});
   const [markFollowUpDone, setMarkFollowUpDone] = useState(true);
   const [rejectedOutcome, setRejectedOutcome] = useState<RejectedOutcome>("new_research");
   const [closeReason, setCloseReason] = useState("");
@@ -79,10 +87,13 @@ export default function RecordClientResponseTaskPanel({
 
   useEffect(() => {
     const nextDecisions: Record<number, CruiseDecision | typeof PROPOSED_CRUISE_STATUS_PROPOSED> = {};
+    const nextRejections: Record<number, ProposedCruiseRejectionInput> = {};
     for (const cruise of activeProposedCruises) {
       nextDecisions[cruise.id] = initialDecision();
+      nextRejections[cruise.id] = { ...EMPTY_PROPOSED_CRUISE_REJECTION };
     }
     setDecisions(nextDecisions);
+    setRejectionInputs(nextRejections);
   }, [activeProposedCruises]);
 
   useEffect(() => {
@@ -129,6 +140,13 @@ export default function RecordClientResponseTaskPanel({
         [cruiseId]: decision,
       };
     });
+
+    if (decision === PROPOSED_CRUISE_STATUS_REJECTED) {
+      setRejectionInputs((current) => ({
+        ...current,
+        [cruiseId]: current[cruiseId] ?? { ...EMPTY_PROPOSED_CRUISE_REJECTION },
+      }));
+    }
   }
 
   async function handleResearchUpload(file: File) {
@@ -161,6 +179,24 @@ export default function RecordClientResponseTaskPanel({
       return;
     }
 
+    for (const { cruise, decision } of pendingDecisions) {
+      if (decision !== PROPOSED_CRUISE_STATUS_REJECTED) {
+        continue;
+      }
+      const hasAcceptedOption = pendingDecisions.some(
+        ({ decision: otherDecision }) => otherDecision === PROPOSED_CRUISE_STATUS_ACCEPTED,
+      );
+      if (hasAcceptedOption) {
+        continue;
+      }
+      const rejectionInput = rejectionInputs[cruise.id] ?? EMPTY_PROPOSED_CRUISE_REJECTION;
+      const rejectionError = validateProposedCruiseRejectionInput(rejectionInput);
+      if (rejectionError) {
+        onError(`${cruise.ship}: ${rejectionError}`);
+        return;
+      }
+    }
+
     if (allRejected && rejectedOutcome === "close_request" && !closeReason) {
       onError("Select a close reason before closing the request.");
       return;
@@ -176,6 +212,22 @@ export default function RecordClientResponseTaskPanel({
     try {
       for (const { cruise, decision } of pendingDecisions) {
         if (decision === PROPOSED_CRUISE_STATUS_PROPOSED || decision === cruise.status) {
+          continue;
+        }
+        if (decision === PROPOSED_CRUISE_STATUS_REJECTED) {
+          const rejectionInput = rejectionInputs[cruise.id] ?? EMPTY_PROPOSED_CRUISE_REJECTION;
+          const isAutoRejected =
+            pendingDecisions.some(
+              ({ decision: otherDecision }) => otherDecision === PROPOSED_CRUISE_STATUS_ACCEPTED,
+            ) && decision === PROPOSED_CRUISE_STATUS_REJECTED;
+          if (isAutoRejected) {
+            await updateProposedCruise(requestId, cruise.id, { status: decision });
+            continue;
+          }
+          await updateProposedCruise(requestId, cruise.id, {
+            status: decision,
+            ...buildProposedCruiseRejectionPayload(rejectionInput),
+          });
           continue;
         }
         await updateProposedCruise(requestId, cruise.id, { status: decision });
@@ -253,6 +305,22 @@ export default function RecordClientResponseTaskPanel({
                 Rejected
               </label>
             </fieldset>
+            {decision === PROPOSED_CRUISE_STATUS_REJECTED &&
+            !pendingDecisions.some(
+              ({ decision: otherDecision }) => otherDecision === PROPOSED_CRUISE_STATUS_ACCEPTED,
+            ) ? (
+              <ProposedCruiseRejectionReasonFields
+                idPrefix={`client-response-${cruise.id}`}
+                value={rejectionInputs[cruise.id] ?? EMPTY_PROPOSED_CRUISE_REJECTION}
+                disabled={disabled || saving}
+                onChange={(value) =>
+                  setRejectionInputs((current) => ({
+                    ...current,
+                    [cruise.id]: value,
+                  }))
+                }
+              />
+            ) : null}
           </li>
         ))}
       </ul>

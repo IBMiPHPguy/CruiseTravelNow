@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   OTHER_CLOSE_REASONS,
   PRIMARY_CLOSE_REASON,
@@ -20,7 +20,18 @@ export default function CloseReasonPicker({
   includePrimaryReason = true,
 }: CloseReasonPickerProps) {
   const [open, setOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (!open || !rootRef.current) {
+      return;
+    }
+
+    const rect = rootRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    setOpenUpward(spaceBelow < 280);
+  }, [open]);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -59,7 +70,11 @@ export default function CloseReasonPicker({
       </button>
 
       {open ? (
-        <div className="close-reason-dropdown-menu" role="listbox" aria-label="Close reason">
+        <div
+          className={`close-reason-dropdown-menu${openUpward ? " close-reason-dropdown-menu-up" : ""}`}
+          role="listbox"
+          aria-label="Close reason"
+        >
           {includePrimaryReason ? (
             <>
               <button

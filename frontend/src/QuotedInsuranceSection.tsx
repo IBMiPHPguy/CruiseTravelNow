@@ -1,10 +1,8 @@
-import { useMemo, useState } from "react";
+import { forwardRef, useImperativeHandle, useState } from "react";
 
 import { addQuotedInsurance, updateQuotedInsurance } from "./api";
 
 import QuotedInsuranceModal from "./QuotedInsuranceModal";
-
-import { QUOTED_INSURANCE_STATUS_ACCEPTED } from "./formOptions";
 
 import { formatMoney, quotedInsuranceStatusClass } from "./quotedInsuranceForm";
 
@@ -27,7 +25,10 @@ type QuotedInsuranceSectionProps = {
   onError: (message: string) => void;
 
   embedded?: boolean;
+};
 
+export type QuotedInsuranceSectionHandle = {
+  openCreateModal: () => void;
 };
 
 
@@ -64,21 +65,18 @@ function declinedOnDate(quote: QuotedInsurance): string | null {
 
 
 
-export default function QuotedInsuranceSection({
-
+export default forwardRef<QuotedInsuranceSectionHandle, QuotedInsuranceSectionProps>(
+  function QuotedInsuranceSection(
+  {
   requestId,
-
   quotes,
-
   disabled,
-
   onChanged,
-
   onError,
-
   embedded = false,
-
-}: QuotedInsuranceSectionProps) {
+}: QuotedInsuranceSectionProps,
+  ref,
+) {
 
   const [modalOpen, setModalOpen] = useState(false);
 
@@ -86,20 +84,12 @@ export default function QuotedInsuranceSection({
 
   const [saving, setSaving] = useState(false);
 
-  const hasAcceptedQuote = useMemo(
-    () => quotes.some((quote) => quote.status === QUOTED_INSURANCE_STATUS_ACCEPTED),
-    [quotes],
-  );
-
-
-
   function openCreateModal() {
-
     setEditingQuote(null);
-
     setModalOpen(true);
-
   }
+
+  useImperativeHandle(ref, () => ({ openCreateModal }), []);
 
 
 
@@ -153,12 +143,6 @@ export default function QuotedInsuranceSection({
 
   const body = (
     <>
-      {!disabled && !hasAcceptedQuote ? (
-        <button type="button" onClick={openCreateModal}>
-          Add insurance quote
-        </button>
-      ) : null}
-
       <div className="quoted-insurance-list">
         {quotes.length === 0 ? (
           <p className="meta">No insurance quotes yet.</p>
@@ -240,7 +224,7 @@ export default function QuotedInsuranceSection({
     </>
 
   );
-
-}
+},
+);
 
 

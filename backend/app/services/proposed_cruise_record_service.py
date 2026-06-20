@@ -8,6 +8,7 @@ from app.constants import (
     PROPOSED_CRUISE_STATUS_ACCEPTED,
     PROPOSED_CRUISE_STATUS_DEPOSITED,
     PROPOSED_CRUISE_STATUS_PROPOSED,
+    PROPOSED_CRUISE_STATUS_REJECTED,
 )
 from app.gemini_service import (
     GeminiConfigurationError,
@@ -31,6 +32,7 @@ from app.proposed_cruise_helpers import (
     passengers_in_room_limits_for_cruise,
     sync_cruise_from_cabin_rooms,
     sync_cruise_totals_from_cabin_pricing,
+    validate_proposed_cruise_rejection,
 )
 from app.schemas import (
     BulkProposedCruiseCreate,
@@ -307,12 +309,37 @@ def update_proposed_cruise(
     includes = updates.pop("includes", None)
     cabin_pricing = updates.pop("cabin_pricing", None)
     cabin_rooms = updates.pop("cabin_rooms", None)
+    rejection_reason = updates.pop("rejection_reason", None)
+    rejection_reason_detail = updates.pop("rejection_reason_detail", None)
+
+    next_status = updates.get("status", cruise.status)
+    rejection_fields_provided = (
+        "rejection_reason" in payload.model_fields_set
+        or "rejection_reason_detail" in payload.model_fields_set
+    )
+    require_rejection_reason = (
+        next_status == PROPOSED_CRUISE_STATUS_REJECTED and rejection_fields_provided
+    )
+    validated_reason, validated_detail = validate_proposed_cruise_rejection(
+        status=next_status,
+        rejection_reason=rejection_reason,
+        rejection_reason_detail=rejection_reason_detail,
+        require_reason=require_rejection_reason,
+    )
 
     if includes is not None:
         cruise.includes = includes.model_dump() if hasattr(includes, "model_dump") else includes
 
     for field, value in updates.items():
         setattr(cruise, field, value)
+
+    if next_status == PROPOSED_CRUISE_STATUS_REJECTED:
+        if rejection_fields_provided:
+            cruise.rejection_reason = validated_reason
+            cruise.rejection_reason_detail = validated_detail
+    elif "status" in updates:
+        cruise.rejection_reason = None
+        cruise.rejection_reason_detail = None
 
     if cabin_rooms is not None:
         normalized_rooms = normalize_cabin_rooms_list(

@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import CloseReasonPicker from "./CloseReasonPicker";
 import { PRIMARY_CLOSE_REASON } from "./formOptions";
 import RequestSummary from "./RequestSummary";
@@ -58,8 +59,8 @@ export default function CloseRequestModal({
     setStep("confirm");
   }
 
-  return (
-    <div className="modal-backdrop" role="presentation" onClick={onCancel}>
+  return createPortal(
+    <div className="modal-backdrop modal-backdrop-scroll" role="presentation" onClick={onCancel}>
       <div
         className="modal-card close-request-modal"
         role="dialog"
@@ -71,29 +72,18 @@ export default function CloseRequestModal({
           <h3 id="close-request-title">{step === "select" ? selectTitle : confirmTitle}</h3>
         </header>
 
-        <div className="modal-card-body">
-          <RequestSummary request={request} />
+        <div className="modal-scroll-body close-request-modal-body">
+          <div className="modal-section-panel">
+            <RequestSummary request={request} />
+          </div>
 
           {step === "select" ? (
-            <>
+            <div className="modal-section-panel">
               <p>{selectIntro}</p>
               <CloseReasonPicker value={closeReason} onChange={setCloseReason} />
-              <div className="modal-actions">
-                <button type="button" className="secondary-button modal-secondary" onClick={onCancel}>
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  className="danger-button"
-                  disabled={!closeReason}
-                  onClick={handleContinue}
-                >
-                  Continue
-                </button>
-              </div>
-            </>
+            </div>
           ) : (
-            <>
+            <div className="modal-section-panel">
               <p>{confirmIntro}</p>
               <p
                 className={
@@ -105,28 +95,43 @@ export default function CloseRequestModal({
                 {closeReason}
               </p>
               <p className="field-hint">{confirmHint}</p>
-              <div className="modal-actions">
-                <button
-                  type="button"
-                  className="secondary-button modal-secondary"
-                  disabled={closing}
-                  onClick={() => setStep("select")}
-                >
-                  Back
-                </button>
-                <button
-                  type="button"
-                  className={isCompleteWorkflow ? undefined : "danger-button"}
-                  disabled={closing}
-                  onClick={() => onConfirm(closeReason)}
-                >
-                  {closing ? (isCompleteWorkflow ? "Completing..." : "Closing...") : confirmButtonLabel}
-                </button>
-              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="modal-actions modal-actions-footer">
+          {step === "select" ? (
+            <>
+              <button type="button" className="modal-secondary" onClick={onCancel}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="danger-button"
+                disabled={!closeReason}
+                onClick={handleContinue}
+              >
+                Continue
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="modal-secondary" disabled={closing} onClick={() => setStep("select")}>
+                Back
+              </button>
+              <button
+                type="button"
+                className={isCompleteWorkflow ? "modal-primary" : "danger-button"}
+                disabled={closing}
+                onClick={() => onConfirm(closeReason)}
+              >
+                {closing ? (isCompleteWorkflow ? "Completing..." : "Closing...") : confirmButtonLabel}
+              </button>
             </>
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

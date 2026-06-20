@@ -15,6 +15,7 @@ import {
 } from "./formOptions";
 import {
   countOpenTasks,
+  formatWorkflowProgressLabel,
   getActiveWorkflow,
   getFollowUpDueLabel,
   getTaskBlockedReason,
@@ -38,6 +39,7 @@ type WorkflowsSectionProps = {
   onChanged: () => Promise<void>;
   onError: (message: string) => void;
   onCloseRequest: (closeReason: string) => Promise<void>;
+  embeddedInWorkspace?: boolean;
 };
 
 function ChevronIcon() {
@@ -57,6 +59,7 @@ export default function WorkflowsSection({
   onChanged,
   onError,
   onCloseRequest,
+  embeddedInWorkspace = false,
 }: WorkflowsSectionProps) {
   const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
   const [selectedType, setSelectedType] = useState("");
@@ -203,9 +206,13 @@ export default function WorkflowsSection({
     setUploadSuccessMessage(null);
   }
 
+  const workflowRootClassName = embeddedInWorkspace
+    ? "workspace-nested-tabs workflows-card"
+    : "section-card section-tabs-card workflows-card";
+
   return (
     <>
-      <section className="section-card section-tabs-card workflows-card">
+      <div className={workflowRootClassName}>
         <div className="section-tablist" role="tablist" aria-label="Workflows">
           <button
             type="button"
@@ -237,13 +244,17 @@ export default function WorkflowsSection({
               {activeWorkflow ? (
                 <div className="workflow-active">
                   <div className="workflow-active-header">
-                    <div>
-                      <p className="workflow-active-type">{workflowTypeLabel(activeWorkflow.workflow_type)}</p>
-                      <p className="meta">
-                        Started by {activeWorkflow.started_by.username} · {formatTimestamp(activeWorkflow.created_at)}
+                    <div className="workflow-active-header-main">
+                      <h4 className="workflow-active-name">{workflowTypeLabel(activeWorkflow.workflow_type)}</h4>
+                      <p className="workflow-active-meta">
+                        <span>Started by {activeWorkflow.started_by.username}</span>
+                        <span className="workflow-active-meta-sep" aria-hidden="true">
+                          |
+                        </span>
+                        <span>{formatTimestamp(activeWorkflow.created_at)}</span>
                       </p>
                     </div>
-                    <span className="workflow-status workflow-status-active">{activeWorkflow.status}</span>
+                    <p className="workflow-active-progress">{formatWorkflowProgressLabel(activeWorkflow)}</p>
                   </div>
 
                   <p className="workflow-task-summary meta">
@@ -325,7 +336,7 @@ export default function WorkflowsSection({
                     <div className="workflow-actions">
                       <button
                         type="button"
-                        className="modal-secondary"
+                        className="workflow-action-ghost"
                         disabled={updatingWorkflowId === activeWorkflow.id}
                         onClick={() => handleWorkflowStatus(activeWorkflow.id, WORKFLOW_STATUS_CANCELLED)}
                       >
@@ -333,6 +344,7 @@ export default function WorkflowsSection({
                       </button>
                       <button
                         type="button"
+                        className="workflow-action-complete"
                         disabled={updatingWorkflowId === activeWorkflow.id}
                         onClick={handleCompleteWorkflowClick}
                       >
@@ -417,7 +429,7 @@ export default function WorkflowsSection({
             </div>
           )}
         </div>
-      </section>
+      </div>
 
       <CloseRequestModal
         open={completeWorkflowModalOpen}

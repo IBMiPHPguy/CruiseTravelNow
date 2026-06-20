@@ -16,6 +16,7 @@ from app.models import Passenger, RequestPassenger, User
 from app.passenger_helpers import (
     activate_passenger_record,
     attach_passenger_to_request,
+    create_client_record,
     create_passenger_record,
     deactivate_passenger_record,
     get_passenger_or_none,
@@ -24,6 +25,7 @@ from app.passenger_helpers import (
 )
 from app.schemas import (
     ClientsPageRead,
+    PassengerCreate,
     PassengerListRead,
     PassengerRead,
     PassengerUpdate,
@@ -32,6 +34,7 @@ from app.schemas import (
     RequestPassengerUpdate,
 )
 from app.services.passenger_service import (
+    detach_request_passenger_from_proposed_cruises,
     load_request_passenger,
     sync_request_from_primary_passenger,
 )
@@ -76,6 +79,7 @@ def list_passenger_registry(
                 email=passenger.email,
                 phone=passenger.phone,
                 date_of_birth=passenger.date_of_birth,
+                qualifiers=passenger.qualifiers or [],
                 is_active=passenger.is_active,
                 request_count=request_count,
             )
@@ -87,6 +91,33 @@ def list_passenger_registry(
         page_size=normalized_page_size,
         total_pages=closed_requests_total_pages(total, normalized_page_size),
     )
+
+
+@router.post("", response_model=PassengerRead, status_code=201)
+def create_passenger_registry(
+    payload: PassengerCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> Passenger:
+    passenger = create_client_record(
+        db,
+        first_name=payload.first_name,
+        last_name=payload.last_name,
+        email=str(payload.email) if payload.email is not None else None,
+        phone=payload.phone,
+        date_of_birth=payload.date_of_birth,
+        address_line_1=payload.address_line_1,
+        address_line_2=payload.address_line_2,
+        city=payload.city,
+        state_or_province=payload.state_or_province,
+        postal_code=payload.postal_code,
+        country=payload.country,
+        qualifiers=payload.qualifiers,
+        created_by_id=current_user.id,
+    )
+    db.commit()
+    db.refresh(passenger)
+    return passenger
 
 
 @router.get("/{passenger_id}", response_model=PassengerRead)
@@ -252,6 +283,11 @@ def delete_passenger(
             detail="The primary passenger cannot be removed from the request.",
         )
 
+    detach_request_passenger_from_proposed_cruises(
+        db,
+        request_passenger_id=passenger.id,
+        request_id=request_id,
+    )
     record_passenger_deletion(db, passenger, current_user)
     db.delete(passenger)
     touch_request(request, current_user)

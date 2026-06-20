@@ -1,8 +1,12 @@
-import { useMemo, useState } from "react";
+import { forwardRef, useEffect, useImperativeHandle, useMemo, useState } from "react";
 import { addProposedCruise, updateProposedCruise, updateRequest } from "./api";
 import AcceptProposedCruiseChooser from "./AcceptProposedCruiseChooser";
 import {
-  CabinHoldReservationDisplay,
+  acceptProposedCruiseForRequest,
+  canQuickAcceptProposedCruise,
+  canQuickRejectProposedCruise,
+} from "./acceptProposedCruise";
+import {
   cabinHoldReservationDisplayLines,
 } from "./CabinHoldReservationFields";
 import {
@@ -10,19 +14,17 @@ import {
   sanitizeCabinHoldReservationIds,
   type CabinHoldReservationIds,
 } from "./cabinHoldReservations";
-import { proposedCruiseToCabinRooms } from "./cabinRooms";
-import { formatMoney } from "./cabinPricing";
 import {
   PROPOSED_CRUISE_STATUS_ACCEPTED,
   PROPOSED_CRUISE_STATUS_DEPOSITED,
   PROPOSED_CRUISE_STATUS_PROPOSED,
   PROPOSED_CRUISE_STATUS_REJECTED,
 } from "./formOptions";
+import ProposedCruiseQuoteCard from "./ProposedCruiseQuoteCard";
 import ProposedCruiseModal from "./ProposedCruiseModal";
-import { proposedCruiseStatusClass } from "./proposedCruiseForm";
-import { formatPassengerNames, proposedRoomLabel } from "./proposedCruiseRooms";
+import ProposedCruiseRejectModal from "./ProposedCruiseRejectModal";
+import { buildProposedCruiseRejectionPayload } from "./proposedCruiseRejection";
 import type { ProposedCruise, ProposedCruiseInput, RequestPassenger } from "./types";
-import { formatDate } from "./utils";
 
 type ProposedCruisesSectionProps = {
   requestId: number;
@@ -30,11 +32,16 @@ type ProposedCruisesSectionProps = {
   cabinHoldReservationIds: CabinHoldReservationIds;
   cruises: ProposedCruise[];
   passengers: RequestPassenger[];
+  requestPassengerCount: number;
   disabled: boolean;
   onChanged: () => Promise<void>;
   onError: (message: string) => void;
   embedded?: boolean;
   allowAcceptProposedCruise?: boolean;
+};
+
+export type ProposedCruisesSectionHandle = {
+  openCreateModal: () => void;
 };
 
 type CruiseTab = "active" | "rejected";
@@ -54,37 +61,40 @@ function cruiseHasCabinDetails(cruise: ProposedCruise): boolean {
   );
 }
 
-export default function ProposedCruisesSection({
+export default forwardRef<ProposedCruisesSectionHandle, ProposedCruisesSectionProps>(
+  function ProposedCruisesSection(
+  {
   requestId,
   cabinsNeeded,
   cabinHoldReservationIds,
   cruises,
   passengers,
+  requestPassengerCount,
   disabled,
   onChanged,
   onError,
   embedded = false,
   allowAcceptProposedCruise = false,
-}: ProposedCruisesSectionProps) {
+}: ProposedCruisesSectionProps,
+  ref,
+) {
   const [activeTab, setActiveTab] = useState<CruiseTab>("active");
   const [modalOpen, setModalOpen] = useState(false);
   const [editingCruise, setEditingCruise] = useState<ProposedCruise | null>(null);
   const [saving, setSaving] = useState(false);
   const [savingRoom, setSavingRoom] = useState(false);
+  const [displayCruises, setDisplayCruises] = useState(cruises);
+  const [statusUpdatingId, setStatusUpdatingId] = useState<number | null>(null);
+  const [rejectingCruise, setRejectingCruise] = useState<ProposedCruise | null>(null);
 
-  const activeCruises = useMemo(() => cruises.filter(isActiveProposedCruise), [cruises]);
+  useEffect(() => {
+    setDisplayCruises(cruises);
+  }, [cruises]);
+
+  const activeCruises = useMemo(() => displayCruises.filter(isActiveProposedCruise), [displayCruises]);
   const rejectedCruises = useMemo(
-    () => cruises.filter((cruise) => cruise.status === PROPOSED_CRUISE_STATUS_REJECTED),
-    [cruises],
-  );
-  const hasLockedCruise = useMemo(
-    () =>
-      cruises.some(
-        (cruise) =>
-          cruise.status === PROPOSED_CRUISE_STATUS_ACCEPTED ||
-          cruise.status === PROPOSED_CRUISE_STATUS_DEPOSITED,
-      ),
-    [cruises],
+    () => displayCruises.filter((cruise) => cruise.status === PROPOSED_CRUISE_STATUS_REJECTED),
+    [displayCruises],
   );
 
   function openCreateModal() {
@@ -92,9 +102,88 @@ export default function ProposedCruisesSection({
     setModalOpen(true);
   }
 
+  useImperativeHandle(ref, () => ({ openCreateModal }), []);
+
   function openEditModal(cruise: ProposedCruise) {
     setEditingCruise(cruise);
     setModalOpen(true);
+  }
+
+  function applyOptimisticAccept(cruiseId: number) {
+    setDisplayCruises((current) =>
+      current.map((cruise) => {
+        if (cruise.id === cruiseId) {
+          return { ...cruise, status: PROPOSED_CRUISE_STATUS_ACCEPTED };
+        }
+        if (cruise.status === PROPOSED_CRUISE_STATUS_PROPOSED) {
+          return { ...cruise, status: PROPOSED_CRUISE_STATUS_REJECTED };
+        }
+        return cruise;
+      }),
+    );
+  }
+
+  function applyOptimisticReject(
+    cruiseId: number,
+    rejection: ReturnType<typeof buildProposedCruiseRejectionPayload>,
+  ) {
+    setDisplayCruises((current) =>
+      current.map((cruise) =>
+        cruise.id === cruiseId
+          ? {
+              ...cruise,
+              status: PROPOSED_CRUISE_STATUS_REJECTED,
+              rejection_reason: rejection.rejection_reason,
+              rejection_reason_detail: rejection.rejection_reason_detail ?? null,
+            }
+          : cruise,
+      ),
+    );
+  }
+
+  function openRejectModal(cruise: ProposedCruise) {
+    onError("");
+    setRejectingCruise(cruise);
+  }
+
+  async function handleConfirmReject(rejection: ReturnType<typeof buildProposedCruiseRejectionPayload>) {
+    if (!rejectingCruise) {
+      return;
+    }
+
+    const cruise = rejectingCruise;
+    setStatusUpdatingId(cruise.id);
+    applyOptimisticReject(cruise.id, rejection);
+    try {
+      await updateProposedCruise(requestId, cruise.id, {
+        status: PROPOSED_CRUISE_STATUS_REJECTED,
+        ...rejection,
+      });
+      setRejectingCruise(null);
+      await onChanged();
+    } catch (rejectError) {
+      setDisplayCruises(cruises);
+      const message = rejectError instanceof Error ? rejectError.message : "Unable to reject proposed cruise.";
+      onError(message);
+    } finally {
+      setStatusUpdatingId(null);
+    }
+  }
+
+  async function handleQuickAccept(cruise: ProposedCruise) {
+    setStatusUpdatingId(cruise.id);
+    onError("");
+    applyOptimisticAccept(cruise.id);
+    try {
+      await acceptProposedCruiseForRequest(requestId, cruise.id, cruises);
+      await onChanged();
+    } catch (acceptError) {
+      setDisplayCruises(cruises);
+      const message = acceptError instanceof Error ? acceptError.message : "Unable to accept proposed cruise.";
+      onError(message);
+    } finally {
+      setStatusUpdatingId(null);
+    }
   }
 
   async function handleSaveRoom(
@@ -175,66 +264,34 @@ export default function ProposedCruisesSection({
       const reservationLines = showCabinDetails
         ? cabinHoldReservationDisplayLines(cabinHoldReservationIds)
         : [];
-      const cabinRooms = proposedCruiseToCabinRooms(cruise, cabinsNeeded);
       const normalizedReservations = normalizeCabinHoldReservationDrafts(
         cabinHoldReservationIds,
         cabinsNeeded,
       );
 
       return (
-      <article className="proposed-cruise-item" key={cruise.id}>
-        <div className="proposed-cruise-item-header">
-          <div>
-            <strong>
-              {cruise.cruise_line} · {cruise.ship}
-            </strong>
-            <div className="meta">
-              Departs {formatDate(cruise.departure_date)} · {cruise.number_of_nights} nights · {cruise.itinerary_name}
-            </div>
-            <div className="meta">
-              Deposit due {formatDate(cruise.deposit_due_date)} · Final payment due{" "}
-              {formatDate(cruise.final_payment_due_date)} · {formatMoney(cruise.cost)} total
-            </div>
-            <div className="proposed-cruise-cabin-pricing-display">
-              {cabinRooms.map((room, cabinIndex) => {
-                const cabinLabel = proposedRoomLabel(cabinIndex, cabinsNeeded);
-                const reservationIds = (normalizedReservations[cabinIndex] ?? [])
-                  .map((value) => value.trim())
-                  .filter(Boolean);
-                const roomPassengerNames = formatPassengerNames(cruise.room_passengers?.[cabinIndex] ?? []);
-
-                return (
-                  <div className="proposed-cruise-cabin-pricing-line meta" key={`${cruise.id}-cabin-${cabinIndex}`}>
-                    <strong>{cabinLabel}</strong>
-                    <span>
-                      {room.room_category} · {room.room_number}
-                    </span>
-                    <span>
-                      Deposit {formatMoney(room.deposit_amount)} · Total {formatMoney(room.cost)} · Up to{" "}
-                      {room.passengers_in_room} passenger{room.passengers_in_room === 1 ? "" : "s"}
-                    </span>
-                    <span>{roomPassengerNames}</span>
-                    {reservationIds.length > 0 ? (
-                      <span>Reservations: {reservationIds.join(", ")}</span>
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-            {reservationLines.length > 0 && cabinsNeeded === 1 ? (
-              <CabinHoldReservationDisplay lines={reservationLines} />
-            ) : null}
-          </div>
-          <span className={`proposed-cruise-status ${proposedCruiseStatusClass(cruise.status)}`}>
-            {cruise.status}
-          </span>
-        </div>
-        {!disabled ? (
-          <button type="button" className="modal-secondary" onClick={() => openEditModal(cruise)}>
-            Edit
-          </button>
-        ) : null}
-      </article>
+        <ProposedCruiseQuoteCard
+          key={cruise.id}
+          cruise={cruise}
+          cabinsNeeded={cabinsNeeded}
+          cabinHoldReservationIds={normalizedReservations}
+          showReservationDisplay={showCabinDetails}
+          reservationLines={reservationLines}
+          requestPassengerCount={requestPassengerCount}
+          disabled={disabled}
+          statusUpdating={statusUpdatingId === cruise.id}
+          onAccept={
+            !disabled && canQuickAcceptProposedCruise(cruise, displayCruises)
+              ? () => void handleQuickAccept(cruise)
+              : undefined
+          }
+          onReject={
+            !disabled && canQuickRejectProposedCruise(cruise)
+              ? () => openRejectModal(cruise)
+              : undefined
+          }
+          onEdit={() => openEditModal(cruise)}
+        />
       );
     });
   }
@@ -283,12 +340,6 @@ export default function ProposedCruisesSection({
             <span className="proposed-cruises-subtab-count">{rejectedCruises.length}</span>
           </button>
         </div>
-
-        {activeTab === "active" && !disabled && !hasLockedCruise ? (
-          <button type="button" className="proposed-cruises-add-button" onClick={openCreateModal}>
-            Add proposed cruise
-          </button>
-        ) : null}
       </div>
 
       {activeTab === "active" ? (
@@ -330,6 +381,18 @@ export default function ProposedCruisesSection({
         </section>
       )}
 
+      <ProposedCruiseRejectModal
+        open={rejectingCruise !== null}
+        cruise={rejectingCruise}
+        rejecting={rejectingCruise !== null && statusUpdatingId === rejectingCruise.id}
+        onCancel={() => {
+          if (statusUpdatingId === null) {
+            setRejectingCruise(null);
+          }
+        }}
+        onConfirm={(rejection) => void handleConfirmReject(rejection)}
+      />
+
       <ProposedCruiseModal
         open={modalOpen}
         requestId={requestId}
@@ -357,4 +420,5 @@ export default function ProposedCruisesSection({
       />
     </>
   );
-}
+},
+);

@@ -25,6 +25,8 @@ type TravelDatesFieldProps = {
   departureDate: string;
   returnDate: string;
   disabled?: boolean;
+  hideLabel?: boolean;
+  embedded?: boolean;
   onChange: (departureDate: string, returnDate: string) => void;
 };
 
@@ -32,6 +34,8 @@ export default function TravelDatesField({
   departureDate,
   returnDate,
   disabled = false,
+  hideLabel = false,
+  embedded = false,
   onChange,
 }: TravelDatesFieldProps) {
   const minReturnDate = minimumReturnDate(departureDate);
@@ -50,8 +54,8 @@ export default function TravelDatesField({
   }
 
   return (
-    <div className="travel-dates">
-      <span className="field-label">Travel dates</span>
+    <div className={`travel-dates${embedded ? " travel-dates-embedded" : ""}`}>
+      {hideLabel ? null : <span className="field-label">Travel dates</span>}
       <div className="travel-dates-inputs">
         <label>
           From

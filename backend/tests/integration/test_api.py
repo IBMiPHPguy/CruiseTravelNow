@@ -144,6 +144,7 @@ def test_open_requests_search_and_pagination(client, auth_headers, sample_reques
     assert dashboard_response.status_code == 200
     dashboard = dashboard_response.json()
     assert dashboard["open_count"] == 1
+    assert dashboard["total_pipeline_value"] == 0.0
     assert "open_requests" not in dashboard
 
     search_response = client.get("/api/requests/open?q=Jane", headers=auth_headers)

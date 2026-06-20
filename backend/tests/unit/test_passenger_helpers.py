@@ -152,3 +152,85 @@ def test_attach_passenger_to_request_rejects_duplicate_link(db):
 
     with pytest.raises(ValueError, match="already attached"):
         attach_passenger_to_request(db, request.id, passenger.id)
+
+
+def test_detach_request_passenger_from_proposed_cruises_allows_deletion(db):
+    from datetime import date
+    from decimal import Decimal
+
+    from app.models import ProposedCruise, ProposedCruisePassenger, RequestPassenger, TravelRequest, User
+    from app.proposed_cruise_helpers import default_proposed_cruise_includes_dict
+    from app.security import hash_password
+    from app.services.passenger_service import detach_request_passenger_from_proposed_cruises
+
+    user = User(
+        username="delete-guest-user",
+        email="delete-guest@example.com",
+        password_hash=hash_password("ValidPass1!"),
+    )
+    request = TravelRequest(
+        first_name="Jane",
+        last_name="Cruiser",
+        email="jane@example.com",
+        phone="5551234567",
+        cruise_lines=["Royal Caribbean International"],
+        destination="Caribbean",
+        destination_details={"caribbean_regions": ["Eastern"]},
+        departure_date=date(2026, 6, 1),
+        return_date=date(2026, 6, 8),
+        cabin_types=["Balcony"],
+        passengers=2,
+        cabins_needed=1,
+        status="Open",
+        created_by=user,
+        updated_by=user,
+    )
+    db.add_all([user, request])
+    db.flush()
+
+    primary_passenger = _create_passenger(db, first_name="Jane", last_name="Cruiser")
+    guest_passenger = _create_passenger(db, first_name="Mary", last_name="Guest")
+    primary = attach_passenger_to_request(db, request.id, primary_passenger.id, is_primary=True)
+    guest = attach_passenger_to_request(db, request.id, guest_passenger.id)
+
+    cruise = ProposedCruise(
+        travel_request_id=request.id,
+        departure_date=date(2026, 7, 1),
+        cruise_line="Royal Caribbean",
+        ship="Wonder",
+        number_of_nights=7,
+        itinerary_name="Western",
+        room_category="Balcony",
+        room_number="GTY",
+        passengers_in_room=2,
+        deposit_amount=Decimal("250.00"),
+        deposit_due_date=date(2026, 5, 1),
+        final_payment_due_date=date(2026, 6, 1),
+        cost=Decimal("4200.00"),
+        includes=default_proposed_cruise_includes_dict(),
+        status="Proposed",
+        created_by_id=user.id,
+        updated_by_id=user.id,
+    )
+    db.add(cruise)
+    db.flush()
+    cruise.passenger_links.append(ProposedCruisePassenger(request_passenger=guest, cabin_index=0))
+    db.commit()
+
+    removed = detach_request_passenger_from_proposed_cruises(
+        db,
+        request_passenger_id=guest.id,
+        request_id=request.id,
+    )
+    assert removed == 1
+
+    db.delete(guest)
+    db.commit()
+
+    remaining = (
+        db.query(RequestPassenger)
+        .filter(RequestPassenger.travel_request_id == request.id)
+        .all()
+    )
+    assert len(remaining) == 1
+    assert remaining[0].id == primary.id

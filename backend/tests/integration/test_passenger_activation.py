@@ -76,6 +76,31 @@ def test_reactivated_client_appears_in_search(client, auth_headers):
 
 
 @pytest.mark.integration
+def test_create_passenger_registry(client, auth_headers):
+    create_response = client.post(
+        "/api/passengers",
+        headers=auth_headers,
+        json={
+            "first_name": "Taylor",
+            "last_name": "Registry",
+            "email": "taylor.registry@example.com",
+            "phone": "5551112222",
+            "qualifiers": ["Military"],
+        },
+    )
+    assert create_response.status_code == 201, create_response.text
+    payload = create_response.json()
+    assert payload["first_name"] == "Taylor"
+    assert payload["last_name"] == "Registry"
+    assert payload["qualifiers"] == ["Military"]
+    assert payload["is_active"] is True
+
+    list_response = client.get("/api/passengers", params={"q": "Taylor Registry"}, headers=auth_headers)
+    assert list_response.status_code == 200
+    assert list_response.json()["total"] == 1
+
+
+@pytest.mark.integration
 def test_clients_search_and_pagination(client, auth_headers, sample_request_payload):
     create_response = client.post("/api/requests", headers=auth_headers, json=sample_request_payload)
     assert create_response.status_code == 201, create_response.text

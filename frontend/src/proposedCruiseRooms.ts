@@ -49,6 +49,28 @@ export function formatPassengerNames(passengers: RequestPassenger[]): string {
   return passengers.map((passenger) => `${passenger.first_name} ${passenger.last_name}`.trim()).join(", ");
 }
 
+export const MAX_ROOM_PASSENGER_ASSIGNMENTS = 4;
+
+export function countProposedCruiseAssignedPassengers(cruise: ProposedCruise): number {
+  return (cruise.room_passengers ?? []).reduce((total, room) => total + room.length, 0);
+}
+
+export function canShowRoomAssignPassenger(
+  roomPassengerCount: number,
+  totalAssignedPassengers: number,
+  requestPassengerCount: number,
+): boolean {
+  if (roomPassengerCount >= MAX_ROOM_PASSENGER_ASSIGNMENTS) {
+    return false;
+  }
+
+  if (totalAssignedPassengers >= requestPassengerCount) {
+    return false;
+  }
+
+  return true;
+}
+
 export function getAssignedPassengerIds(roomPassengerIds: RoomPassengerIds): number[] {
   return flattenRoomPassengerIds(roomPassengerIds);
 }

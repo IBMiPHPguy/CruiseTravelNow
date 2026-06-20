@@ -1,13 +1,14 @@
 import { useEffect, useState } from "react";
-import { activateClient, deactivateClient, fetchClient, updateClient } from "./api";
+import { activateClient, createClient, deactivateClient, fetchClient, updateClient } from "./api";
 import ChickenSwitchModal from "./ChickenSwitchModal";
+import InactiveClientBadge from "./InactiveClientBadge";
+import PassengerQualifierBadges from "./PassengerQualifierBadges";
 import PassengerFields, { emptyPassengerInput, toPassengerPayload } from "./PassengerFields";
 import { formatPassengerAddressLine, passengerAddressToInput } from "./passengerAddress";
-import InactiveClientBadge from "./InactiveClientBadge";
 import type { ClientDetail, RequestPassengerInput } from "./types";
 import { formatDate } from "./utils";
 
-type ClientModalMode = "view" | "edit";
+type ClientModalMode = "view" | "edit" | "create";
 
 type ClientModalProps = {
   open: boolean;
@@ -26,7 +27,25 @@ function clientToForm(client: ClientDetail): RequestPassengerInput {
     email: client.email,
     phone: client.phone,
     date_of_birth: client.date_of_birth ?? "",
+    qualifiers: client.qualifiers ?? [],
     ...passengerAddressToInput(client),
+  };
+}
+
+function buildClientPayload(payload: RequestPassengerInput) {
+  return {
+    first_name: payload.first_name,
+    last_name: payload.last_name,
+    email: payload.email,
+    phone: payload.phone,
+    date_of_birth: payload.date_of_birth,
+    address_line_1: payload.address_line_1,
+    address_line_2: payload.address_line_2,
+    city: payload.city,
+    state_or_province: payload.state_or_province,
+    postal_code: payload.postal_code,
+    country: payload.country,
+    qualifiers: payload.qualifiers,
   };
 }
 
@@ -48,9 +67,23 @@ export default function ClientModal({
   const [deactivating, setDeactivating] = useState(false);
 
   useEffect(() => {
-    if (!open || clientId === null) {
+    if (!open) {
       setClient(null);
+      setEditForm(emptyPassengerInput());
       setError("");
+      setPendingDeactivate(false);
+      return;
+    }
+
+    if (mode === "create") {
+      setClient(null);
+      setEditForm(emptyPassengerInput());
+      setError("");
+      setLoading(false);
+      return;
+    }
+
+    if (clientId === null) {
       return;
     }
 
@@ -79,9 +112,21 @@ export default function ClientModal({
     return () => {
       cancelled = true;
     };
-  }, [open, clientId]);
+  }, [open, clientId, mode]);
 
-  if (!open || clientId === null) {
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [open]);
+
+  if (!open || (mode !== "create" && clientId === null)) {
     return null;
   }
 
@@ -94,25 +139,32 @@ export default function ClientModal({
     setError("");
     try {
       const payload = toPassengerPayload(editForm);
-      const updated = await updateClient(client.id, {
-        first_name: payload.first_name,
-        last_name: payload.last_name,
-        email: payload.email,
-        phone: payload.phone,
-        date_of_birth: payload.date_of_birth,
-        address_line_1: payload.address_line_1,
-        address_line_2: payload.address_line_2,
-        city: payload.city,
-        state_or_province: payload.state_or_province,
-        postal_code: payload.postal_code,
-        country: payload.country,
-      });
+      const updated = await updateClient(client.id, buildClientPayload(payload));
       setClient(updated);
       setEditForm(clientToForm(updated));
       onModeChange("view");
       onSaved();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Unable to update client.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCreate() {
+    setSaving(true);
+    setError("");
+    try {
+      const payload = toPassengerPayload(editForm);
+      if (!payload.first_name || !payload.last_name) {
+        setError("First and last name are required.");
+        return;
+      }
+      await createClient(buildClientPayload(payload));
+      onSaved();
+      onClose();
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Unable to add client.");
     } finally {
       setSaving(false);
     }
@@ -165,114 +217,135 @@ export default function ClientModal({
   }
 
   const addressLine = client ? formatPassengerAddressLine(client) : "";
+  const modalTitle =
+    mode === "create" ? "Add client" : mode === "view" ? "Client details" : "Edit client";
 
   return (
     <>
-      <div className="modal-backdrop" role="presentation" onClick={onClose}>
-      <div
-        className="modal-card modal-card-wide client-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="client-modal-title"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <header className="modal-card-header">
-          <div className="client-modal-header">
-            <h3 id="client-modal-title">
-              {mode === "view" ? "Client details" : "Edit client"}
-            </h3>
-            {client && !client.is_active ? <InactiveClientBadge /> : null}
+      <div className="modal-backdrop client-modal-backdrop" role="presentation" onClick={onClose}>
+        <div
+          className="modal-card modal-card-wide client-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="client-modal-title"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <header className="modal-card-header">
+            <div className="client-modal-header">
+              <h3 id="client-modal-title">{modalTitle}</h3>
+              {client && !client.is_active ? <InactiveClientBadge /> : null}
+            </div>
+          </header>
+
+          <div className="modal-scroll-body client-modal-body">
+            {loading ? <p>Loading client...</p> : null}
+            {error ? <p className="status error">{error}</p> : null}
+
+            {!loading && client && mode === "view" ? (
+              <div className="modal-section-panel">
+                <dl className="client-detail-grid">
+                  <div>
+                    <dt>Name</dt>
+                    <dd>
+                      {client.first_name} {client.last_name}
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Date of birth</dt>
+                    <dd>{client.date_of_birth ? formatDate(client.date_of_birth) : "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Phone</dt>
+                    <dd>{client.phone}</dd>
+                  </div>
+                  <div>
+                    <dt>Email</dt>
+                    <dd>{client.email}</dd>
+                  </div>
+                  <div>
+                    <dt>Address</dt>
+                    <dd>{addressLine || "—"}</dd>
+                  </div>
+                  <div>
+                    <dt>Qualifying discounts</dt>
+                    <dd>
+                      <PassengerQualifierBadges qualifiers={client.qualifiers ?? []} />
+                    </dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>{client.is_active ? "Active" : "Inactive"}</dd>
+                  </div>
+                </dl>
+              </div>
+            ) : null}
+
+            {!loading && (mode === "edit" || mode === "create") ? (
+              <div className="modal-section-panel">
+                <PassengerFields
+                  value={editForm}
+                  onChange={setEditForm}
+                  disabled={saving}
+                  showDateOfBirth
+                  showAddress
+                  showQualifiers
+                  qualifierHint="Saved on this client record and used as their default qualifying discounts."
+                />
+                {mode === "edit" ? (
+                  <p className="field-hint">
+                    Updates apply to this person across all requests where they appear.
+                  </p>
+                ) : (
+                  <p className="field-hint">
+                    New clients are added to the registry and can be attached to requests later.
+                  </p>
+                )}
+              </div>
+            ) : null}
           </div>
-        </header>
 
-        <div className="modal-scroll-body client-modal-body">
-          {loading ? <p>Loading client...</p> : null}
-          {error ? <p className="status error">{error}</p> : null}
-
-          {!loading && client && mode === "view" ? (
-            <dl className="client-detail-grid">
-              <div>
-                <dt>Name</dt>
-                <dd>
-                  {client.first_name} {client.last_name}
-                </dd>
-              </div>
-              <div>
-                <dt>Date of birth</dt>
-                <dd>{client.date_of_birth ? formatDate(client.date_of_birth) : "—"}</dd>
-              </div>
-              <div>
-                <dt>Phone</dt>
-                <dd>{client.phone}</dd>
-              </div>
-              <div>
-                <dt>Email</dt>
-                <dd>{client.email}</dd>
-              </div>
-              <div>
-                <dt>Address</dt>
-                <dd>{addressLine || "—"}</dd>
-              </div>
-              <div>
-                <dt>Status</dt>
-                <dd>{client.is_active ? "Active" : "Inactive"}</dd>
-              </div>
-            </dl>
-          ) : null}
-
-          {!loading && client && mode === "edit" ? (
-            <>
-              <PassengerFields
-                value={editForm}
-                onChange={setEditForm}
-                disabled={saving}
-                showDateOfBirth
-                showAddress
-              />
-              <p className="field-hint">
-                Updates apply to this person across all requests where they appear.
-              </p>
-            </>
-          ) : null}
-        </div>
-
-        <div className="modal-actions modal-actions-footer">
-          <button type="button" className="modal-secondary" disabled={saving} onClick={onClose}>
-            Close
-          </button>
-          {client && mode === "view" ? (
-            <>
-              {client.is_active ? (
-                <button
-                  type="button"
-                  className="modal-secondary danger-button"
-                  disabled={saving || deactivating}
-                  onClick={() => setPendingDeactivate(true)}
-                >
-                  Mark inactive
+          <div className="modal-actions modal-actions-footer">
+            <button type="button" className="modal-secondary" disabled={saving} onClick={onClose}>
+              {mode === "create" ? "Cancel" : "Close"}
+            </button>
+            {client && mode === "view" ? (
+              <>
+                {client.is_active ? (
+                  <button
+                    type="button"
+                    className="modal-secondary danger-button"
+                    disabled={saving || deactivating}
+                    onClick={() => setPendingDeactivate(true)}
+                  >
+                    Mark inactive
+                  </button>
+                ) : (
+                  <button type="button" className="modal-secondary" disabled={saving} onClick={() => void handleReactivate()}>
+                    Reactivate
+                  </button>
+                )}
+                <button type="button" className="modal-primary" disabled={saving} onClick={() => onModeChange("edit")}>
+                  Edit client
                 </button>
-              ) : (
-                <button type="button" className="modal-secondary" disabled={saving} onClick={() => void handleReactivate()}>
-                  Reactivate
+              </>
+            ) : null}
+            {client && mode === "edit" ? (
+              <>
+                <button type="button" className="modal-secondary" disabled={saving} onClick={() => onModeChange("view")}>
+                  Cancel
                 </button>
-              )}
-              <button type="button" disabled={saving} onClick={() => onModeChange("edit")}>
-                Edit client
+                <button type="button" className="modal-primary" disabled={saving} onClick={() => void handleSave()}>
+                  {saving ? "Saving..." : "Save client"}
+                </button>
+              </>
+            ) : null}
+            {mode === "create" ? (
+              <button type="button" className="modal-primary" disabled={saving} onClick={() => void handleCreate()}>
+                {saving ? "Adding..." : "Add client"}
               </button>
-            </>
-          ) : null}
-          {client && mode === "edit" ? (
-            <>
-              <button type="button" className="modal-secondary" disabled={saving} onClick={() => onModeChange("view")}>
-                Cancel
-              </button>
-              <button type="button" disabled={saving} onClick={() => void handleSave()}>
-                {saving ? "Saving..." : "Save client"}
-              </button>
-            </>
-          ) : null}
+            ) : null}
+          </div>
         </div>
-      </div>
       </div>
 
       <ChickenSwitchModal

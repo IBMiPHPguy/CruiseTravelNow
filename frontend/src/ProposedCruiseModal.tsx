@@ -20,6 +20,7 @@ import {
   PROPOSED_CRUISE_STATUS_ACCEPTED,
   PROPOSED_CRUISE_STATUS_DEPOSITED,
   PROPOSED_CRUISE_STATUS_PROPOSED,
+  PROPOSED_CRUISE_STATUS_REJECTED,
 } from "./formOptions";
 import {
   buildProposedCruisePayload,
@@ -27,6 +28,11 @@ import {
   proposedCruiseStatusOptionClass,
   proposedCruiseToForm,
 } from "./proposedCruiseForm";
+import ProposedCruiseRejectionReasonFields from "./ProposedCruiseRejectionReasonFields";
+import {
+  type ProposedCruiseRejectionInput,
+  validateProposedCruiseRejectionInput,
+} from "./proposedCruiseRejection";
 import ProposedCruiseRoomEditor from "./ProposedCruiseRoomEditor";
 import {
   flattenRoomPassengerIds,
@@ -102,6 +108,11 @@ export default function ProposedCruiseModal({
   const showCabinHoldFields =
     effectiveStatus === PROPOSED_CRUISE_STATUS_ACCEPTED ||
     effectiveStatus === PROPOSED_CRUISE_STATUS_DEPOSITED;
+  const showRejectionReasonFields = effectiveStatus === PROPOSED_CRUISE_STATUS_REJECTED;
+  const rejectionInput: ProposedCruiseRejectionInput = {
+    rejection_reason: (form.rejection_reason ?? "") as ProposedCruiseRejectionInput["rejection_reason"],
+    rejection_reason_detail: form.rejection_reason_detail ?? "",
+  };
   const cabinRooms = normalizeCabinRooms(form.cabin_rooms, cabinsNeeded, {
     room_category: form.room_category,
     room_number: form.room_number,
@@ -334,6 +345,14 @@ export default function ProposedCruiseModal({
       }
     }
 
+    if (showRejectionReasonFields) {
+      const rejectionError = validateProposedCruiseRejectionInput(rejectionInput);
+      if (rejectionError) {
+        setError(rejectionError);
+        return;
+      }
+    }
+
     setError("");
     const savingWithReservations =
       (form.status ?? cruise?.status) === PROPOSED_CRUISE_STATUS_ACCEPTED ||
@@ -386,7 +405,7 @@ export default function ProposedCruiseModal({
 
         <form className="modal-form-layout" onSubmit={handleSubmit} noValidate>
           <div className="modal-scroll-body proposed-cruise-form">
-            <section className="proposed-cruise-cruise-level">
+            <section className="modal-section-panel proposed-cruise-cruise-level">
               <p className="field-label">Cruise details</p>
               <div className="field-row field-row--aligned">
                 <label className="field-stack">
@@ -508,7 +527,7 @@ export default function ProposedCruiseModal({
             </section>
 
             {showAcceptThisCruise ? (
-              <section className="proposed-cruise-accept-section">
+              <section className="modal-section-panel proposed-cruise-accept-section">
                 <p className="field-hint">
                   Enter Trip in CRM is active. Mark this cruise as the accepted booking before continuing.
                 </p>
@@ -524,15 +543,40 @@ export default function ProposedCruiseModal({
             ) : null}
 
             {cruise && !showAcceptThisCruise ? (
-              <section className="proposed-cruise-status-section">
+              <section className="modal-section-panel proposed-cruise-status-section">
                 <StatusPicker
                   label="Proposed cruise status"
                   value={form.status ?? cruise.status}
                   options={PROPOSED_CRUISE_STATUSES}
-                  onChange={(status) => setForm({ ...form, status })}
+                  onChange={(status) =>
+                    setForm({
+                      ...form,
+                      status,
+                      rejection_reason:
+                        status === PROPOSED_CRUISE_STATUS_REJECTED ? form.rejection_reason ?? "" : "",
+                      rejection_reason_detail:
+                        status === PROPOSED_CRUISE_STATUS_REJECTED
+                          ? form.rejection_reason_detail ?? ""
+                          : "",
+                    })
+                  }
                   disabled={disabled || saving || savingRoom}
                   getOptionClassName={proposedCruiseStatusOptionClass}
                 />
+                {showRejectionReasonFields ? (
+                  <ProposedCruiseRejectionReasonFields
+                    idPrefix={`proposed-cruise-modal-${cruise.id}`}
+                    value={rejectionInput}
+                    disabled={disabled || saving || savingRoom}
+                    onChange={(value) =>
+                      setForm({
+                        ...form,
+                        rejection_reason: value.rejection_reason || undefined,
+                        rejection_reason_detail: value.rejection_reason_detail,
+                      })
+                    }
+                  />
+                ) : null}
               </section>
             ) : null}
 
@@ -573,7 +617,7 @@ export default function ProposedCruiseModal({
               Cancel
             </button>
             {!disabled ? (
-              <button type="submit" disabled={saving || savingRoom}>
+              <button type="submit" className="modal-primary" disabled={saving || savingRoom}>
                 {saving
                   ? "Saving..."
                   : cruise

@@ -1,31 +1,47 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import NotesSection from "./NotesSection";
 import ResearchDocumentsSection from "./ResearchDocumentsSection";
-import type { RequestNote, ResearchDocument } from "./types";
+import type { RequestNoteSummary, ResearchDocument } from "./types";
 
 type NotesResearchTab = "notes" | "research";
 
 type RequestNotesResearchSectionProps = {
   requestId: number;
-  notes: RequestNote[];
+  notes: RequestNoteSummary[];
   researchDocuments: ResearchDocument[];
+  focusedNoteId?: number | null;
+  onFocusedNoteHandled?: () => void;
   disabled: boolean;
   onChanged: () => Promise<void>;
   onError: (message: string) => void;
+  embeddedInWorkspace?: boolean;
 };
 
 export default function RequestNotesResearchSection({
   requestId,
   notes,
   researchDocuments,
+  focusedNoteId = null,
+  onFocusedNoteHandled,
   disabled,
   onChanged,
   onError,
+  embeddedInWorkspace = false,
 }: RequestNotesResearchSectionProps) {
   const [activeTab, setActiveTab] = useState<NotesResearchTab>("notes");
 
+  useEffect(() => {
+    if (focusedNoteId) {
+      setActiveTab("notes");
+    }
+  }, [focusedNoteId]);
+
+  const rootClassName = embeddedInWorkspace
+    ? "workspace-nested-tabs request-notes-research-section"
+    : "section-card section-tabs-card request-notes-research-section";
+
   return (
-    <section className="section-card section-tabs-card request-notes-research-section">
+    <div className={rootClassName}>
       <div className="section-tablist" role="tablist" aria-label="Notes and research documents">
         <button
           type="button"
@@ -58,6 +74,8 @@ export default function RequestNotesResearchSection({
               embedded
               requestId={requestId}
               notes={notes}
+              focusedNoteId={focusedNoteId}
+              onFocusedNoteHandled={onFocusedNoteHandled}
               disabled={disabled}
               onChanged={onChanged}
               onError={onError}
@@ -69,6 +87,6 @@ export default function RequestNotesResearchSection({
           </div>
         )}
       </div>
-    </section>
+    </div>
   );
 }

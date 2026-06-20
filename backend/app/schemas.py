@@ -14,6 +14,7 @@ from app.constants import (
     DESTINATIONS,
     EUROPE_REGIONS,
     LEGACY_CRUISE_LINE_ALIASES,
+    PROPOSED_CRUISE_REJECTION_REASONS,
     PROPOSED_CRUISE_STATUSES,
     QUALIFIERS,
     QUOTED_INSURANCE_STATUSES,
@@ -252,6 +253,7 @@ class PassengerRead(BaseModel):
     state_or_province: str | None = None
     postal_code: str | None = None
     country: str | None = None
+    qualifiers: list[str] = Field(default_factory=list)
     is_active: bool = True
     created_at: datetime
     updated_at: datetime
@@ -264,6 +266,7 @@ class PassengerListRead(BaseModel):
     email: EmailStr | None = None
     phone: str | None = None
     date_of_birth: date | None = None
+    qualifiers: list[str] = Field(default_factory=list)
     is_active: bool
     request_count: int = Field(ge=0)
 
@@ -289,6 +292,41 @@ class PassengerUpdate(BaseModel):
     state_or_province: str | None = Field(default=None, max_length=50)
     postal_code: str | None = Field(default=None, max_length=20)
     country: str | None = Field(default=None, max_length=80)
+    qualifiers: list[str] | None = None
+
+    @field_validator("qualifiers")
+    @classmethod
+    def validate_passenger_qualifiers(cls, value: list[str] | None) -> list[str] | None:
+        if value is None:
+            return None
+        return validate_qualifier_values(value)
+
+    @field_validator("email", "phone", mode="before")
+    @classmethod
+    def normalize_optional_contact(cls, value: Any) -> Any:
+        if isinstance(value, str) and not value.strip():
+            return None
+        return value
+
+
+class PassengerCreate(BaseModel):
+    first_name: str = Field(min_length=1, max_length=80)
+    last_name: str = Field(min_length=1, max_length=80)
+    email: EmailStr | None = None
+    phone: str | None = Field(default=None, max_length=30)
+    date_of_birth: date | None = None
+    address_line_1: str | None = Field(default=None, max_length=120)
+    address_line_2: str | None = Field(default=None, max_length=120)
+    city: str | None = Field(default=None, max_length=80)
+    state_or_province: str | None = Field(default=None, max_length=50)
+    postal_code: str | None = Field(default=None, max_length=20)
+    country: str | None = Field(default=None, max_length=80)
+    qualifiers: list[str] = Field(default_factory=list)
+
+    @field_validator("qualifiers")
+    @classmethod
+    def validate_passenger_qualifiers(cls, value: list[str]) -> list[str]:
+        return validate_qualifier_values(value)
 
     @field_validator("email", "phone", mode="before")
     @classmethod
@@ -481,6 +519,11 @@ class AttachmentRead(BaseModel):
 
 
 class RequestNoteCreate(BaseModel):
+    summary: str = Field(min_length=1, max_length=160)
+    content: str = Field(min_length=1)
+
+
+class CommunicationAiSummaryRead(BaseModel):
     summary: str = Field(min_length=1, max_length=160)
     content: str = Field(min_length=1)
 
@@ -684,6 +727,8 @@ class ProposedCruiseUpdate(BaseModel):
     room_passenger_ids: list[list[int]] | None = None
     passenger_ids: list[int] | None = None
     status: str | None = Field(default=None, min_length=1, max_length=40)
+    rejection_reason: str | None = Field(default=None, max_length=120)
+    rejection_reason_detail: str | None = Field(default=None, max_length=500)
     cabin_pricing: list[CabinPricingEntry] | None = None
     cabin_rooms: list[ProposedCruiseRoom] | None = None
 
@@ -711,6 +756,23 @@ class ProposedCruiseUpdate(BaseModel):
             raise ValueError("Invalid proposed cruise status selected.")
         return value
 
+    @field_validator("rejection_reason")
+    @classmethod
+    def validate_rejection_reason(cls, value: str | None) -> str | None:
+        if value is not None and value not in PROPOSED_CRUISE_REJECTION_REASONS:
+            raise ValueError("Invalid rejection reason selected.")
+        return value
+
+    @field_validator("rejection_reason_detail", mode="before")
+    @classmethod
+    def normalize_rejection_reason_detail(cls, value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+        return str(value).strip() or None
+
 
 class ProposedCruiseRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -733,6 +795,8 @@ class ProposedCruiseRead(BaseModel):
     cabin_rooms: list[ProposedCruiseRoom] = Field(default_factory=list)
     includes: ProposedCruiseIncludes
     status: str
+    rejection_reason: str | None = None
+    rejection_reason_detail: str | None = None
     passengers: list[RequestPassengerRead] = Field(default_factory=list)
     room_passengers: list[list[RequestPassengerRead]] = Field(default_factory=list)
     created_by: UserAudit
@@ -1107,3 +1171,118 @@ class DashboardResponse(BaseModel):
         default=None,
         description="Purchased closed requests divided by all closed requests, as a percentage.",
     )
+    total_pipeline_value: float = Field(
+        default=0.0,
+        description="Sum of the highest active proposed-quote cost per open request.",
+    )
+
+
+class SalesAnalyticsMonthCommission(BaseModel):
+    month_key: str
+    label: str
+    total_commission: float
+    booking_count: int
+
+
+class SalesAnalyticsFunnelStage(BaseModel):
+    label: str
+    count: int
+
+
+class SalesAnalyticsRejectionReason(BaseModel):
+    segment: str = Field(
+        description="open_active_lead for open requests, closed_lost_lead for closed requests without a booking."
+    )
+    reason: str
+    count: int
+
+
+class SalesAnalyticsCruiseLineShare(BaseModel):
+    cruise_line: str
+    booking_count: int
+    share_percent: float
+    total_booking_amount: float = 0.0
+    total_commission: float = 0.0
+    median_booking_amount: float = 0.0
+    commission_rate_percent: float = 0.0
+
+
+class SalesAnalyticsYearSummary(BaseModel):
+    year: int
+    total_sales_booked: float = 0.0
+    total_sales_lost: float = Field(
+        default=0.0,
+        description=(
+            "Sum of closed-lost request values for the year based on proposed cruise totals: "
+            "single quote uses full value; multiple quotes use the lowest non-zero quote."
+        ),
+    )
+    average_commission_rate_percent: float | None = Field(
+        default=None,
+        description="Total commission on bookings accepted in the year divided by booked sales in the year.",
+    )
+    win_rate_percent: float | None = Field(
+        default=None,
+        description=(
+            "Requests booked in the year divided by closed requests that closed in the year. "
+            "A closed request with a booked or deposited cruise counts as a win."
+        ),
+    )
+
+
+class SalesAnalyticsResponse(BaseModel):
+    commission_timeline: list[SalesAnalyticsMonthCommission] = Field(default_factory=list)
+    funnel_stages: list[SalesAnalyticsFunnelStage] = Field(default_factory=list)
+    win_rate_percent: float | None = Field(
+        default=None,
+        description=(
+            "Closed requests with an accepted or deposited proposal divided by all closed requests."
+        ),
+    )
+    rejection_reasons: list[SalesAnalyticsRejectionReason] = Field(default_factory=list)
+    cruise_line_shares: list[SalesAnalyticsCruiseLineShare] = Field(default_factory=list)
+    current_year_summary: SalesAnalyticsYearSummary
+    key_metrics_prior_years: list[int] = Field(
+        default_factory=list,
+        description="Prior calendar years that have booked, rejected, or closed-lost key-metric activity.",
+    )
+    total_commission_forecast: float = 0.0
+    available_years: list[int] = Field(
+        default_factory=list,
+        description="Years available for the pipeline revenue chart selector.",
+    )
+
+
+class SalesCopilotRequest(BaseModel):
+    question: str = Field(min_length=1, max_length=500)
+
+
+class SalesCopilotResponse(BaseModel):
+    answer: str
+
+
+class ClientImportTargetField(BaseModel):
+    field_name: str
+    required: bool
+    description: str
+
+
+class ClientImportParseResponse(BaseModel):
+    filename: str
+    sheet_name: str | None = None
+    source_columns: list[str] = Field(default_factory=list)
+    preview_rows: list[list[str]] = Field(default_factory=list)
+    target_fields: list[ClientImportTargetField] = Field(default_factory=list)
+    suggested_mapping: dict[str, str | None] = Field(default_factory=dict)
+
+
+class ClientImportRowError(BaseModel):
+    row_number: int = Field(ge=2)
+    record_label: str
+    message: str
+
+
+class ClientImportResultResponse(BaseModel):
+    imported_count: int = Field(ge=0)
+    skipped_count: int = Field(ge=0)
+    errors: list[ClientImportRowError] = Field(default_factory=list)

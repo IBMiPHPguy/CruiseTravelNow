@@ -52,32 +52,35 @@ export default function ChickenSwitchModal({
           <h3 id="chicken-switch-title">{title}</h3>
         </header>
 
-        <div className="modal-card-body">
-          <p>{description}</p>
-          {itemName ? <p className="confirm-reason confirm-reason-negative">{itemName}</p> : null}
-          <label className="chicken-switch-control">
-            <input
-              type="checkbox"
-              checked={armed}
-              disabled={confirming}
-              onChange={(event) => setArmed(event.target.checked)}
-            />
-            <span>{switchLabel}</span>
-          </label>
-          {hint ? <p className="field-hint">{hint}</p> : null}
-          <div className="modal-actions">
-            <button type="button" className="secondary-button modal-secondary" disabled={confirming} onClick={onCancel}>
-              Cancel
-            </button>
-            <button
-              type="button"
-              className="danger-button"
-              disabled={!armed || confirming}
-              onClick={onConfirm}
-            >
-              {confirming ? confirmingLabel : confirmLabel}
-            </button>
+        <div className="modal-scroll-body">
+          <div className="modal-section-panel modal-section-panel-warning">
+            <p>{description}</p>
+            {itemName ? <p className="confirm-reason confirm-reason-negative">{itemName}</p> : null}
+            <label className="chicken-switch-control">
+              <input
+                type="checkbox"
+                checked={armed}
+                disabled={confirming}
+                onChange={(event) => setArmed(event.target.checked)}
+              />
+              <span>{switchLabel}</span>
+            </label>
+            {hint ? <p className="field-hint">{hint}</p> : null}
           </div>
+        </div>
+
+        <div className="modal-actions modal-actions-footer">
+          <button type="button" className="modal-secondary" disabled={confirming} onClick={onCancel}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="danger-button"
+            disabled={!armed || confirming}
+            onClick={onConfirm}
+          >
+            {confirming ? confirmingLabel : confirmLabel}
+          </button>
         </div>
       </div>
     </div>

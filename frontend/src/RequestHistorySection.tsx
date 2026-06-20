@@ -9,12 +9,14 @@ type RequestHistorySectionProps = {
   requestId: number;
   passengers: RequestPassenger[];
   workflows: RequestWorkflow[];
+  embeddedInWorkspace?: boolean;
 };
 
 export default function RequestHistorySection({
   requestId,
   passengers,
   workflows,
+  embeddedInWorkspace = false,
 }: RequestHistorySectionProps) {
   const [activeTab, setActiveTab] = useState<HistoryTab>("changes");
   const [changeCount, setChangeCount] = useState<number | null>(null);
@@ -28,8 +30,12 @@ export default function RequestHistorySection({
   const changeTabLabel =
     changeCount === null ? "Request change history" : `Request change history (${changeCount})`;
 
+  const rootClassName = embeddedInWorkspace
+    ? "workspace-nested-tabs request-history-section"
+    : "section-card section-tabs-card request-history-section";
+
   return (
-    <section className="section-card section-tabs-card request-history-section">
+    <div className={rootClassName}>
       <div className="section-tablist" role="tablist" aria-label="Request history">
         <button
           type="button"
@@ -78,6 +84,6 @@ export default function RequestHistorySection({
           </div>
         )}
       </div>
-    </section>
+    </div>
   );
 }

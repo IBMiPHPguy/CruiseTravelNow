@@ -5,7 +5,7 @@ type IconTooltipProps = {
   children: ReactNode;
   placement?: "above" | "below";
   wide?: boolean;
-  align?: "center" | "start";
+  align?: "center" | "start" | "end";
 };
 
 export default function IconTooltip({
@@ -20,6 +20,7 @@ export default function IconTooltip({
     placement === "below" ? "icon-tooltip-popover-below" : null,
     wide ? "icon-tooltip-popover-wide" : null,
     align === "start" ? "icon-tooltip-popover-align-start" : null,
+    align === "end" ? "icon-tooltip-popover-align-end" : null,
   ]
     .filter(Boolean)
     .join(" ");

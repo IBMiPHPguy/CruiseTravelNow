@@ -1,19 +1,49 @@
-import { FormEvent, useEffect, useState } from "react";
-import { createRequest, fetchDashboard, fetchHealth } from "./api";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { createRequest, addNote, fetchDashboard } from "./api";
 import { fetchCurrentUser, logout } from "./authApi";
 import { getToken } from "./authStorage";
 import Dashboard from "./Dashboard";
 import ClosedRequestsPage from "./ClosedRequestsPage";
 import ClientsPage from "./ClientsPage";
+import SalesAnalytics from "./SalesAnalytics";
 import AppSidebar, { activeNavItemForView } from "./AppSidebar";
 import Login from "./Login";
-import PassengerPickerModal from "./PassengerPickerModal";
-import { toPassengerPayload } from "./PassengerFields";
 import RequestForm, { emptyRequestForm, isReturnAfterDeparture } from "./RequestForm";
 import RequestWorkspace from "./RequestWorkspace";
-import { BRAND_APP_TITLE, BRAND_TAGLINE } from "./branding";
-import type { AppView, DashboardData, PassengerProfile, RequestPassengerInput, TravelRequestInput, User } from "./types";
+import { formatCruiseLines } from "./CruiseLineMultiSelect";
+import { buildQuickNoteInput } from "./noteForm";
+import { BRAND_APP_TITLE, brandedDocumentTitle, REQUEST_DASHBOARD_PAGE_TITLE } from "./branding";
+import type { AppView, DashboardData, TravelRequest, TravelRequestInput, User } from "./types";
+import { formatDate, formatDestinationSummary } from "./utils";
 import "./App.css";
+
+function formToSummaryPreview(form: TravelRequestInput): TravelRequest {
+  return {
+    id: 0,
+    first_name: form.first_name,
+    last_name: form.last_name,
+    email: form.email,
+    phone: form.phone,
+    cruise_lines: form.cruise_lines,
+    excluded_cruise_lines: form.excluded_cruise_lines ?? [],
+    destination: form.destination,
+    destination_details: ["Caribbean", "Alaska", "Asia", "Europe"].includes(form.destination)
+      ? form.destination_details ?? null
+      : null,
+    departure_date: form.departure_date,
+    return_date: form.return_date,
+    cabin_types: form.cabin_types,
+    passengers: form.passengers,
+    cabins_needed: form.cabins_needed,
+    cabin_hold_reservation_ids: [],
+    status: "Open",
+    close_reason: null,
+    created_by: { id: 0, username: "" },
+    updated_by: { id: 0, username: "" },
+    created_at: "",
+    updated_at: "",
+  };
+}
 
 function App() {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -21,12 +51,13 @@ function App() {
   const [view, setView] = useState<AppView>({ type: "dashboard" });
   const [dashboard, setDashboard] = useState<DashboardData | null>(null);
   const [form, setForm] = useState<TravelRequestInput>(emptyRequestForm);
-  const [health, setHealth] = useState<string>("checking...");
   const [message, setMessage] = useState<string>("");
   const [error, setError] = useState<string>("");
   const [submitting, setSubmitting] = useState(false);
   const [dashboardLoading, setDashboardLoading] = useState(false);
-  const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const [creationNote, setCreationNote] = useState("");
+
+  const newRequestSummary = useMemo(() => formToSummaryPreview(form), [form]);
 
   async function loadDashboard() {
     setDashboardLoading(true);
@@ -34,7 +65,7 @@ function App() {
       const data = await fetchDashboard();
       setDashboard(data);
     } catch (loadError) {
-      setError(loadError instanceof Error ? loadError.message : "Unable to load dashboard.");
+      setError(loadError instanceof Error ? loadError.message : `Unable to load ${REQUEST_DASHBOARD_PAGE_TITLE.toLowerCase()}.`);
     } finally {
       setDashboardLoading(false);
     }
@@ -50,7 +81,7 @@ function App() {
       try {
         const user = await fetchCurrentUser();
         setCurrentUser(user);
-        await loadDashboard();
+        void loadDashboard();
       } catch {
         setCurrentUser(null);
       } finally {
@@ -58,18 +89,20 @@ function App() {
       }
     }
 
-    bootstrap().catch(() => setAuthLoading(false));
+    void bootstrap();
   }, []);
 
   useEffect(() => {
     if (!currentUser) {
+      document.title = BRAND_APP_TITLE;
       return;
     }
-
-    fetchHealth()
-      .then((result) => setHealth(`${result.service} (${result.status})`))
-      .catch(() => setHealth("offline"));
-  }, [currentUser]);
+    if (view.type === "dashboard" || view.type === "closed") {
+      document.title = brandedDocumentTitle(REQUEST_DASHBOARD_PAGE_TITLE);
+      return;
+    }
+    document.title = BRAND_APP_TITLE;
+  }, [currentUser, view.type]);
 
   function handleLogout() {
     logout();
@@ -84,10 +117,7 @@ function App() {
     setCurrentUser(user);
     setView({ type: "dashboard" });
     setError("");
-    loadDashboard().catch(() => setError("Unable to load dashboard."));
-    fetchHealth()
-      .then((result) => setHealth(`${result.service} (${result.status})`))
-      .catch(() => setHealth("offline"));
+    loadDashboard().catch(() => setError(`Unable to load ${REQUEST_DASHBOARD_PAGE_TITLE.toLowerCase()}.`));
   }
 
   async function handleCreateRequest(event: FormEvent<HTMLFormElement>) {
@@ -126,8 +156,28 @@ function App() {
 
     try {
       const created = await createRequest(payload);
+      const trimmedNote = creationNote.trim();
+
+      if (trimmedNote) {
+        try {
+          await addNote(created.id, buildQuickNoteInput(trimmedNote));
+        } catch (noteError) {
+          setForm(emptyRequestForm);
+          setCreationNote("");
+          await loadDashboard();
+          setView({ type: "edit", requestId: created.id });
+          setError(
+            noteError instanceof Error
+              ? `Request was created, but the note could not be saved: ${noteError.message}`
+              : "Request was created, but the note could not be saved.",
+          );
+          return;
+        }
+      }
+
       setForm(emptyRequestForm);
-      setMessage("Travel request created.");
+      setCreationNote("");
+      setMessage(trimmedNote ? "Travel request and note created." : "Travel request created.");
       await loadDashboard();
       setView({ type: "edit", requestId: created.id });
     } catch (submitError) {
@@ -157,10 +207,12 @@ function App() {
     <main className={`page${hideSidebar ? " page-workspace" : ""}`}>
       <section className="hero">
         <div className="hero-top">
-          <div>
-            <h1>{BRAND_APP_TITLE}</h1>
-            <p>{BRAND_TAGLINE}</p>
-            <p>API status: {health}</p>
+          <div className="hero-brand">
+            <img
+              src="/sailspipeline-logo.png"
+              alt={BRAND_APP_TITLE}
+              className="app-logo"
+            />
           </div>
           <div className="user-panel">
             <span>Signed in as {currentUser.username}</span>
@@ -183,6 +235,10 @@ function App() {
                 loadDashboard().catch(() => undefined);
                 return;
               }
+              if (item === "sales-analytics") {
+                setView({ type: "sales-analytics" });
+                return;
+              }
               setView({ type: "clients" });
             }}
           />
@@ -192,13 +248,14 @@ function App() {
       {view.type === "dashboard" ? (
         dashboardLoading && !dashboard ? (
           <section className="card">
-            <p>Loading dashboard...</p>
+            <p>Loading {REQUEST_DASHBOARD_PAGE_TITLE.toLowerCase()}...</p>
           </section>
         ) : dashboard ? (
           <Dashboard
             dashboard={dashboard}
             onNewRequest={() => {
               setForm(emptyRequestForm);
+              setCreationNote("");
               setMessage("");
               setError("");
               setView({ type: "new" });
@@ -213,12 +270,23 @@ function App() {
               setError("");
               setView({ type: "closed" });
             }}
+            onDashboardRefresh={() => {
+              loadDashboard().catch(() => undefined);
+            }}
           />
         ) : (
           <section className="card">
-            <p>{error || "Unable to load dashboard."}</p>
+            <p>{error || `Unable to load ${REQUEST_DASHBOARD_PAGE_TITLE.toLowerCase()}.`}</p>
           </section>
         )
+      ) : null}
+
+      {view.type === "sales-analytics" ? (
+        <SalesAnalytics
+          onError={(message) => {
+            setError(message);
+          }}
+        />
       ) : null}
 
       {view.type === "clients" ? <ClientsPage /> : null}
@@ -238,9 +306,9 @@ function App() {
       ) : null}
 
       {view.type === "new" ? (
-        <div className="workspace">
-          <section className="request-summary-card">
-            <div className="request-summary-card-top">
+        <div className="workspace workspace-tabbed">
+          <section className="request-summary-card request-summary-card-compact">
+            <div className="request-summary-compact-row">
               <button
                 type="button"
                 className="back-button"
@@ -249,71 +317,80 @@ function App() {
                   loadDashboard().catch(() => undefined);
                 }}
               >
-                Back to dashboard
+                Back
               </button>
-              <span className="status-badge status-badge-open">New</span>
+
+              <div className="request-summary-compact-title">
+                <h2>New Cruise Request</h2>
+                <p className="request-summary-compact-client">
+                  {form.first_name || form.last_name
+                    ? `${form.first_name} ${form.last_name}`.trim()
+                    : "Enter client and trip details"}
+                </p>
+                <span className="status-badge status-badge-open">New</span>
+              </div>
+
+              <div className="request-summary-compact-actions">
+                <button type="submit" form="request-create-form" disabled={submitting}>
+                  {submitting ? "Creating..." : "Create Request"}
+                </button>
+              </div>
             </div>
 
-            <div className="request-summary-card-main">
-              <h2>New Cruise Request</h2>
-              <p className="request-summary-client">Enter client and trip details to start intake.</p>
+            <div className="request-summary-compact-meta">
+              {form.destination ? <span>{formatDestinationSummary(newRequestSummary)}</span> : null}
+              {form.cruise_lines.length > 0 ? <span>{formatCruiseLines(form.cruise_lines)}</span> : null}
+              {form.departure_date || form.return_date ? (
+                <span>
+                  {formatDate(form.departure_date)} – {formatDate(form.return_date)}
+                </span>
+              ) : null}
             </div>
           </section>
 
-          <section className="section-card">
-            <header className="section-card-header">
-              <h3>Request Details</h3>
-            </header>
-            <div className="section-card-body">
-              <RequestForm
-                form={form}
-                setForm={setForm}
-                onSubmit={handleCreateRequest}
-                submitting={submitting}
-                submitLabel="Create Request"
-                showPrimaryPassengerDob
-                onFindExistingClient={() => setClientPickerOpen(true)}
-              />
+          {message || error ? (
+            <div className="workspace-status-messages">
+              {message ? <p className="status success">{message}</p> : null}
+              {error ? <p className="status error">{error}</p> : null}
+            </div>
+          ) : null}
+
+          <section className="section-card section-tabs-card workspace-tabs-card">
+            <div className="section-tablist workspace-tablist" role="tablist" aria-label="New request">
+              <button
+                type="button"
+                role="tab"
+                id="new-request-tab-details"
+                aria-selected
+                aria-controls="new-request-panel-details"
+                className="section-tab is-active"
+              >
+                Request detail
+              </button>
+            </div>
+
+            <div className="section-card-body section-tab-body workspace-tab-body">
+              <div
+                role="tabpanel"
+                id="new-request-panel-details"
+                aria-labelledby="new-request-tab-details"
+                className="workspace-tab-panel"
+              >
+                <RequestForm
+                  formId="request-create-form"
+                  hideActions
+                  layout="workspace"
+                  form={form}
+                  setForm={setForm}
+                  onSubmit={handleCreateRequest}
+                  submitting={submitting}
+                  submitLabel="Create Request"
+                  creationNote={creationNote}
+                  onCreationNoteChange={setCreationNote}
+                />
+              </div>
             </div>
           </section>
-
-          <PassengerPickerModal
-            open={clientPickerOpen}
-            title="Find existing client"
-            saving={false}
-            showQualifiers
-            newSectionHeading="New client"
-            onClose={() => setClientPickerOpen(false)}
-            onAttachExisting={async (passenger: PassengerProfile, qualifiers: string[]) => {
-              setForm({
-                ...form,
-                first_name: passenger.first_name,
-                last_name: passenger.last_name,
-                email: passenger.email,
-                phone: passenger.phone,
-                primary_passenger_id: passenger.id,
-                first_passenger_date_of_birth: passenger.date_of_birth ?? "",
-                qualifiers,
-              });
-              setClientPickerOpen(false);
-            }}
-            onCreateNew={async (payload: RequestPassengerInput) => {
-              const normalized = toPassengerPayload(payload);
-              setForm({
-                ...form,
-                first_name: normalized.first_name ?? "",
-                last_name: normalized.last_name ?? "",
-                email: normalized.email ?? "",
-                phone: normalized.phone ?? "",
-                first_passenger_date_of_birth: normalized.date_of_birth ?? "",
-                primary_passenger_id: undefined,
-                qualifiers: normalized.qualifiers ?? [],
-              });
-              setClientPickerOpen(false);
-            }}
-          />
-          {message ? <p className="status success">{message}</p> : null}
-          {error ? <p className="status error">{error}</p> : null}
         </div>
       ) : null}
 

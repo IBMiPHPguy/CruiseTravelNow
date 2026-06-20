@@ -60,6 +60,7 @@ export default function QuotedInsuranceModal({
 
         <form className="modal-form-layout" onSubmit={handleSubmit}>
           <div className="modal-scroll-body quoted-insurance-form">
+            <div className="modal-section-panel">
           <label>
             Carrier
             <input
@@ -152,6 +153,7 @@ export default function QuotedInsuranceModal({
               getOptionClassName={quotedInsuranceStatusOptionClass}
             />
           ) : null}
+            </div>
           </div>
 
           <div className="modal-actions modal-actions-footer">
@@ -159,7 +161,7 @@ export default function QuotedInsuranceModal({
               Cancel
             </button>
             {!disabled ? (
-              <button type="submit" disabled={saving}>
+              <button type="submit" className="modal-primary" disabled={saving}>
                 {saving ? "Saving..." : quote ? "Save insurance quote" : "Add insurance quote"}
               </button>
             ) : null}

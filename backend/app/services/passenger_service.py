@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.audit_helpers import (
@@ -10,7 +11,7 @@ from app.audit_helpers import (
     record_passenger_field_changes,
     record_travel_request_field_changes,
 )
-from app.models import RequestPassenger, TravelRequest, User
+from app.models import ProposedCruise, ProposedCruisePassenger, RequestPassenger, TravelRequest, User
 
 
 def load_request_passenger(db: Session, link_id: int) -> RequestPassenger:
@@ -19,6 +20,23 @@ def load_request_passenger(db: Session, link_id: int) -> RequestPassenger:
         .options(joinedload(RequestPassenger.passenger))
         .filter(RequestPassenger.id == link_id)
         .one()
+    )
+
+
+def detach_request_passenger_from_proposed_cruises(
+    db: Session,
+    *,
+    request_passenger_id: int,
+    request_id: int,
+) -> int:
+    cruise_ids = select(ProposedCruise.id).where(ProposedCruise.travel_request_id == request_id)
+    return (
+        db.query(ProposedCruisePassenger)
+        .filter(
+            ProposedCruisePassenger.request_passenger_id == request_passenger_id,
+            ProposedCruisePassenger.proposed_cruise_id.in_(cruise_ids),
+        )
+        .delete(synchronize_session=False)
     )
 
 

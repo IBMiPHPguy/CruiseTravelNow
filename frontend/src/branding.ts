@@ -4,6 +4,9 @@ export const BRAND_NAME = "SailsPipeline";
 /** Full app title for login, browser tab, and dashboard chrome. */
 export const BRAND_APP_TITLE = "SailsPipeline CRM";
 
+/** Primary landing page after sign-in (open requests home). */
+export const REQUEST_DASHBOARD_PAGE_TITLE = "Request Dashboard";
+
 export const BRAND_TAGLINE = "Manage cruise travel requests from intake through close.";
 
 export function brandedDocumentTitle(page?: string): string {

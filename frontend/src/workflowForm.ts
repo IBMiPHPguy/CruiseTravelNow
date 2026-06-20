@@ -83,6 +83,16 @@ export function countOpenTasks(workflow: RequestWorkflow): number {
   return workflow.tasks.filter((task) => task.status === TASK_STATUS_OPEN).length;
 }
 
+export function countCompletedTasks(workflow: RequestWorkflow): number {
+  return workflow.tasks.filter((task) => task.status === TASK_STATUS_DONE).length;
+}
+
+export function formatWorkflowProgressLabel(workflow: RequestWorkflow): string {
+  const completed = countCompletedTasks(workflow);
+  const total = workflow.tasks.length;
+  return `Progress: ${completed} / ${total} Tasks Complete`;
+}
+
 export function sortedWorkflowTasks(workflow: RequestWorkflow): RequestTask[] {
   return [...workflow.tasks].sort((left, right) => left.sort_order - right.sort_order);
 }

@@ -1,4 +1,5 @@
 import { updateProposedCruise } from "./api";
+import { hasAcceptedOrDepositedProposedCruise } from "./crmEntrySummary";
 import {
   PROPOSED_CRUISE_STATUS_ACCEPTED,
   PROPOSED_CRUISE_STATUS_PROPOSED,
@@ -8,6 +9,16 @@ import type { ProposedCruise } from "./types";
 
 export function getProposedCruisesAwaitingAcceptance(cruises: ProposedCruise[]): ProposedCruise[] {
   return cruises.filter((cruise) => cruise.status === PROPOSED_CRUISE_STATUS_PROPOSED);
+}
+
+export function canQuickAcceptProposedCruise(cruise: ProposedCruise, cruises: ProposedCruise[]): boolean {
+  return (
+    cruise.status === PROPOSED_CRUISE_STATUS_PROPOSED && !hasAcceptedOrDepositedProposedCruise(cruises)
+  );
+}
+
+export function canQuickRejectProposedCruise(cruise: ProposedCruise): boolean {
+  return cruise.status === PROPOSED_CRUISE_STATUS_PROPOSED;
 }
 
 export async function acceptProposedCruiseForRequest(

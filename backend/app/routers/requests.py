@@ -17,6 +17,7 @@ from app.schemas import (
     AttachmentRead,
     BulkProposedCruiseCreate,
     BulkProposedCruiseCreateResponse,
+    CommunicationAiSummaryRead,
     GenerateProposedCruisesRequest,
     GenerateProposedCruisesResponse,
     ProposedCruiseCreate,
@@ -36,6 +37,10 @@ from app.schemas import (
     TravelRequestDetailRead,
     TravelRequestRead,
     TravelRequestUpdate,
+)
+from app.services.communication_ai_service import (
+    generate_chat_log_ai_summary_note,
+    generate_transcript_ai_summary_note,
 )
 from app.services.note_service import add_note, get_request_note, list_request_notes, update_note
 from app.services.proposed_cruise_record_service import (
@@ -217,6 +222,40 @@ def get_chat_log_content_route(
     _: User = Depends(get_current_user),
 ) -> PlainTextResponse:
     return get_chat_log_content(db, request_id, chat_id)
+
+
+@router.post(
+    "/{request_id}/transcripts/{transcript_id}/ai-summary",
+    response_model=CommunicationAiSummaryRead,
+)
+def generate_transcript_ai_summary_route(
+    request_id: int,
+    transcript_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> CommunicationAiSummaryRead:
+    return generate_transcript_ai_summary_note(
+        db,
+        request_id=request_id,
+        transcript_id=transcript_id,
+    )
+
+
+@router.post(
+    "/{request_id}/chats/{chat_id}/ai-summary",
+    response_model=CommunicationAiSummaryRead,
+)
+def generate_chat_log_ai_summary_route(
+    request_id: int,
+    chat_id: int,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> CommunicationAiSummaryRead:
+    return generate_chat_log_ai_summary_note(
+        db,
+        request_id=request_id,
+        chat_id=chat_id,
+    )
 
 
 @router.post("/{request_id}/notes", response_model=RequestNoteRead, status_code=201)

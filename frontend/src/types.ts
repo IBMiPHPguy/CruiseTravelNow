@@ -42,6 +42,7 @@ export type PassengerProfile = {
   email: string | null;
   phone: string | null;
   date_of_birth: string | null;
+  qualifiers: string[];
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -54,6 +55,7 @@ export type ClientListItem = {
   email: string | null;
   phone: string | null;
   date_of_birth: string | null;
+  qualifiers: string[];
   is_active: boolean;
   request_count: number;
 };
@@ -89,6 +91,22 @@ export type ClientUpdateInput = {
   state_or_province?: string | null;
   postal_code?: string | null;
   country?: string | null;
+  qualifiers?: string[];
+};
+
+export type ClientCreateInput = {
+  first_name: string;
+  last_name: string;
+  email?: string | null;
+  phone?: string | null;
+  date_of_birth?: string | null;
+  address_line_1?: string | null;
+  address_line_2?: string | null;
+  city?: string | null;
+  state_or_province?: string | null;
+  postal_code?: string | null;
+  country?: string | null;
+  qualifiers?: string[];
 };
 
 export type RequestPassenger = {
@@ -230,6 +248,8 @@ export type ProposedCruise = {
   cabin_rooms: ProposedCruiseRoom[];
   includes: ProposedCruiseIncludes;
   status: string;
+  rejection_reason?: string | null;
+  rejection_reason_detail?: string | null;
   passengers: RequestPassenger[];
   room_passengers: RequestPassenger[][];
   created_by: UserAudit;
@@ -274,6 +294,8 @@ export type ProposedCruiseInput = {
   room_passenger_ids: number[][];
   passenger_ids: number[];
   status?: string;
+  rejection_reason?: string;
+  rejection_reason_detail?: string;
 };
 
 export type QuotedInsurance = {
@@ -451,6 +473,7 @@ export type DashboardData = {
   purchased_closed_count: number;
   other_closed_count: number;
   successful_sales_close_rate: number | null;
+  total_pipeline_value: number;
 };
 
 export type TravelRequestInput = {
@@ -487,9 +510,85 @@ export type RegisterInput = {
 
 export type AppView =
   | { type: "dashboard" }
+  | { type: "sales-analytics" }
   | { type: "clients" }
   | { type: "closed" }
   | { type: "new" }
   | { type: "edit"; requestId: number };
 
-export type AppNavItem = "dashboard" | "clients";
+export type AppNavItem = "dashboard" | "sales-analytics" | "clients";
+
+export type SalesAnalyticsMonthCommission = {
+  month_key: string;
+  label: string;
+  total_commission: number;
+  booking_count: number;
+};
+
+export type SalesAnalyticsFunnelStage = {
+  label: string;
+  count: number;
+};
+
+export type SalesAnalyticsRejectionReason = {
+  segment: string;
+  reason: string;
+  count: number;
+};
+
+export type SalesAnalyticsCruiseLineShare = {
+  cruise_line: string;
+  booking_count: number;
+  share_percent: number;
+  total_booking_amount: number;
+  total_commission: number;
+  median_booking_amount: number;
+  commission_rate_percent: number;
+};
+
+export type SalesAnalyticsYearSummary = {
+  year: number;
+  total_sales_booked: number;
+  total_sales_lost: number;
+  average_commission_rate_percent: number | null;
+  win_rate_percent: number | null;
+};
+
+export type SalesAnalyticsData = {
+  commission_timeline: SalesAnalyticsMonthCommission[];
+  funnel_stages: SalesAnalyticsFunnelStage[];
+  win_rate_percent: number | null;
+  rejection_reasons: SalesAnalyticsRejectionReason[];
+  cruise_line_shares: SalesAnalyticsCruiseLineShare[];
+  current_year_summary: SalesAnalyticsYearSummary;
+  key_metrics_prior_years: number[];
+  total_commission_forecast: number;
+  available_years: number[];
+};
+
+export type ClientImportTargetField = {
+  field_name: string;
+  required: boolean;
+  description: string;
+};
+
+export type ClientImportParseResponse = {
+  filename: string;
+  sheet_name: string | null;
+  source_columns: string[];
+  preview_rows: string[][];
+  target_fields: ClientImportTargetField[];
+  suggested_mapping: Record<string, string | null>;
+};
+
+export type ClientImportRowError = {
+  row_number: number;
+  record_label: string;
+  message: string;
+};
+
+export type ClientImportResult = {
+  imported_count: number;
+  skipped_count: number;
+  errors: ClientImportRowError[];
+};

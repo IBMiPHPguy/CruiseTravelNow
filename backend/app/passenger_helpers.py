@@ -55,6 +55,51 @@ def create_passenger_record(
     return passenger
 
 
+def _normalize_optional_text(value: str | None) -> str | None:
+    if not value:
+        return None
+    cleaned = value.strip()
+    return cleaned or None
+
+
+def create_client_record(
+    db: Session,
+    *,
+    first_name: str,
+    last_name: str,
+    email: str | None,
+    phone: str | None,
+    date_of_birth,
+    address_line_1: str | None = None,
+    address_line_2: str | None = None,
+    city: str | None = None,
+    state_or_province: str | None = None,
+    postal_code: str | None = None,
+    country: str | None = None,
+    qualifiers: list[str] | None = None,
+    created_by_id: int | None,
+) -> Passenger:
+    passenger = Passenger(
+        first_name=first_name.strip(),
+        last_name=last_name.strip(),
+        email=_normalize_optional_text(email),
+        phone=_normalize_optional_text(phone),
+        date_of_birth=date_of_birth,
+        address_line_1=_normalize_optional_text(address_line_1),
+        address_line_2=_normalize_optional_text(address_line_2),
+        city=_normalize_optional_text(city),
+        state_or_province=_normalize_optional_text(state_or_province),
+        postal_code=_normalize_optional_text(postal_code),
+        country=_normalize_optional_text(country),
+        qualifiers=qualifiers or [],
+        created_by_id=created_by_id,
+        is_active=True,
+    )
+    db.add(passenger)
+    db.flush()
+    return passenger
+
+
 def get_passenger_or_none(db: Session, passenger_id: int) -> Passenger | None:
     return db.get(Passenger, passenger_id)
 

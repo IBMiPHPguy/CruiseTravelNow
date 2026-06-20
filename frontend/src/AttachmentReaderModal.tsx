@@ -74,15 +74,30 @@ export default function AttachmentReaderModal({
         <header className="modal-card-header">
           <h3 id="attachment-reader-title">{title}</h3>
         </header>
-        <div className="attachment-reader-meta meta">
-          {attachment.original_filename} · {formatFileSize(attachment.size_bytes)} · Added by{" "}
-          {attachment.created_by.username} · {formatTimestamp(attachment.created_at)}
+        <div className="modal-meta-row attachment-reader-meta">
+          <span>{attachment.original_filename}</span>
+          <span className="modal-meta-separator" aria-hidden="true">
+            |
+          </span>
+          <span>{formatFileSize(attachment.size_bytes)}</span>
+          <span className="modal-meta-separator" aria-hidden="true">
+            |
+          </span>
+          <span>Added by {attachment.created_by.username}</span>
+          <span className="modal-meta-separator" aria-hidden="true">
+            |
+          </span>
+          <span>{formatTimestamp(attachment.created_at)}</span>
         </div>
 
         <div className="attachment-reader-body">
           {loading ? <p>Loading file...</p> : null}
           {error ? <p className="status error">{error}</p> : null}
-          {!loading && !error ? <pre className="attachment-reader-content">{content}</pre> : null}
+          {!loading && !error ? (
+            <div className="modal-section-panel">
+              <pre className="attachment-reader-content">{content}</pre>
+            </div>
+          ) : null}
         </div>
 
         <div className="modal-actions modal-actions-footer attachment-reader-actions">

@@ -29,7 +29,7 @@ describe("passengerDisplay", () => {
 
   it("joins email and phone when both are present", () => {
     expect(formatPassengerContact("jane@example.com", "5551234567")).toBe(
-      "jane@example.com · 5551234567",
+      "jane@example.com · (555) 123-4567",
     );
   });
 });

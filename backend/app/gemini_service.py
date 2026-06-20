@@ -323,3 +323,149 @@ def generate_research_communication_from_proposals(
         raise GeminiParseError("Gemini returned an empty closing.")
 
     return email_subject, intro, closing, model_name
+
+
+_COMMUNICATION_KIND_LABELS = {
+    "transcripts": "call transcript",
+    "chats": "chat log",
+}
+
+_MAX_COMMUNICATION_CHARS = 80_000
+
+
+def _truncate_communication_text(text: str) -> str:
+    cleaned = text.strip()
+    if len(cleaned) <= _MAX_COMMUNICATION_CHARS:
+        return cleaned
+    return (
+        f"{cleaned[:_MAX_COMMUNICATION_CHARS]}\n\n"
+        "[Communication truncated for AI processing due to length.]"
+    )
+
+
+def _build_communication_summary_prompt(
+    *,
+    communication_kind: str,
+    filename: str,
+    communication_text: str,
+    request_context: dict[str, Any],
+) -> str:
+    kind_label = _COMMUNICATION_KIND_LABELS.get(communication_kind, "communication")
+    return f"""You analyze travel-agency client communications and produce CRM notes for cruise advisors.
+
+Communication type: {kind_label}
+Source file: {filename}
+
+Travel request context (use to connect details and avoid contradicting known facts):
+{json.dumps(request_context, indent=2, default=str)}
+
+Communication content:
+{communication_text}
+
+Return JSON only with this exact shape:
+{{
+  "summary": "string",
+  "research_brief": "string"
+}}
+
+Rules for summary:
+- Write 2-4 concise sentences in plain language for the advisor.
+- Capture who said what that matters: preferences, objections, pricing discussed, dates, ships/itineraries, and scheduling.
+- Mention explicit follow-ups or next steps (calls, deadlines, documents needed).
+- Do not invent facts that are not supported by the communication or request context.
+
+Rules for research_brief:
+- Markdown bullet list (use - bullets) aimed at the research/proposal workflow.
+- Include sections only when there is content: Client preferences, Constraints, Budget/pricing signals, Ships/itineraries mentioned, Follow-up actions.
+- Pull out concrete facts (dates, prices, cabin types, promotions, locations) when present.
+- Flag open questions the advisor still needs to answer.
+- Keep it scannable and actionable; no filler.
+"""
+
+
+def generate_communication_ai_summary(
+    *,
+    api_key: str,
+    model_name: str,
+    communication_kind: str,
+    filename: str,
+    communication_text: str,
+    request_context: dict[str, Any],
+) -> tuple[str, str]:
+    if not api_key.strip():
+        raise GeminiConfigurationError("Gemini API key is not configured.")
+
+    cleaned_text = _truncate_communication_text(communication_text)
+    if not cleaned_text:
+        raise GeminiParseError("Communication content is empty.")
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_name)
+    prompt = _build_communication_summary_prompt(
+        communication_kind=communication_kind,
+        filename=filename,
+        communication_text=cleaned_text,
+        request_context=request_context,
+    )
+
+    try:
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(
+                response_mime_type="application/json",
+                temperature=0.3,
+            ),
+        )
+    except Exception as exc:
+        raise GeminiParseError(f"Gemini request failed: {exc}") from exc
+
+    response_text = getattr(response, "text", None) or ""
+    if not response_text.strip():
+        raise GeminiParseError("Gemini returned an empty response.")
+
+    try:
+        payload = _extract_json(response_text)
+    except json.JSONDecodeError as exc:
+        raise GeminiParseError("Gemini returned invalid JSON.") from exc
+
+    summary = str(payload.get("summary") or "").strip()
+    research_brief = str(payload.get("research_brief") or "").strip()
+
+    if not summary:
+        raise GeminiParseError("Gemini returned an empty summary.")
+    if not research_brief:
+        raise GeminiParseError("Gemini returned an empty research brief.")
+
+    return summary, research_brief
+
+
+def generate_sales_analytics_copilot_answer(question: str, analytics_context: dict) -> str:
+    from app.config import settings
+
+    api_key = settings.gemini_api_key or ""
+    if not api_key.strip():
+        raise GeminiConfigurationError("Gemini API key is not configured.")
+
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(settings.gemini_model)
+    prompt = (
+        "You are First Mate, a concise sales analytics copilot for a cruise travel agency CRM called SailsPipeline. "
+        "Answer in 2-4 short sentences using only the provided analytics JSON. "
+        "Be specific with numbers and percentages when available. "
+        "Do not invent data.\n\n"
+        f"Question: {question.strip()}\n\n"
+        f"Analytics JSON:\n{json.dumps(analytics_context, default=str)}"
+    )
+
+    try:
+        response = model.generate_content(
+            prompt,
+            generation_config=genai.GenerationConfig(temperature=0.35),
+        )
+    except Exception as exc:
+        raise GeminiParseError(f"Gemini request failed: {exc}") from exc
+
+    answer = (getattr(response, "text", None) or "").strip()
+    if not answer:
+        raise GeminiParseError("Gemini returned an empty response.")
+    return answer

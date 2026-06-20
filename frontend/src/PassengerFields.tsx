@@ -1,4 +1,5 @@
 import { QUALIFIERS } from "./formOptions";
+import { qualifierBadgeClass } from "./qualifierDisplay";
 import type { RequestPassengerInput } from "./types";
 import { normalizeAddressInput, passengerAddressToInput } from "./passengerAddress";
 
@@ -9,6 +10,7 @@ type PassengerFieldsProps = {
   showDateOfBirth?: boolean;
   showAddress?: boolean;
   showQualifiers?: boolean;
+  qualifierHint?: string;
   requireContactFields?: boolean;
 };
 
@@ -20,34 +22,41 @@ type PassengerQualifierFieldsProps = {
   value: string[];
   onChange: (value: string[]) => void;
   disabled: boolean;
+  hint?: string;
 };
 
 export function PassengerQualifierFields({
   value,
   onChange,
   disabled,
+  hint = "Applies to this passenger on this request only.",
 }: PassengerQualifierFieldsProps) {
   return (
     <div>
       <span className="field-label">Qualifying discounts</span>
-      <p className="field-hint">Applies to this passenger on this request only.</p>
-      <div className="checkbox-group">
-        {QUALIFIERS.map((qualifier) => (
-          <label className="checkbox-inline" key={qualifier}>
-            <input
-              type="checkbox"
+      <p className="field-hint">{hint}</p>
+      <div className="passenger-qualifier-picker" role="group" aria-label="Qualifying discounts">
+        {QUALIFIERS.map((qualifier) => {
+          const selected = value.includes(qualifier);
+          return (
+            <button
+              key={qualifier}
+              type="button"
+              className={`passenger-qualifier-picker-pill ${qualifierBadgeClass(qualifier)}${
+                selected ? " is-selected" : ""
+              }`}
               disabled={disabled}
-              checked={value.includes(qualifier)}
-              onChange={() => onChange(toggleListItem(value, qualifier))}
-            />
-            {qualifier}
-          </label>
-        ))}
+              aria-pressed={selected}
+              onClick={() => onChange(toggleListItem(value, qualifier))}
+            >
+              {qualifier}
+            </button>
+          );
+        })}
       </div>
     </div>
   );
 }
-
 export default function PassengerFields({
   value,
   onChange,
@@ -55,6 +64,7 @@ export default function PassengerFields({
   showDateOfBirth = true,
   showAddress = false,
   showQualifiers = false,
+  qualifierHint,
   requireContactFields = false,
 }: PassengerFieldsProps) {
   const qualifiers = value.qualifiers ?? [];
@@ -118,6 +128,7 @@ export default function PassengerFields({
         <PassengerQualifierFields
           value={qualifiers}
           disabled={disabled}
+          hint={qualifierHint}
           onChange={(nextQualifiers) => onChange({ ...value, qualifiers: nextQualifiers })}
         />
       ) : null}

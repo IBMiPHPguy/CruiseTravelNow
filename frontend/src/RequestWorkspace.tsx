@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
-import { fetchRequest, updateRequest, uploadChatLog, uploadTranscript } from "./api";
+import { FormEvent, useEffect, useState, type ReactNode } from "react";
+import { addNote, fetchRequest, generateCommunicationAiSummary, updateRequest, uploadChatLog, uploadTranscript } from "./api";
 import RequestClientContentSection from "./RequestClientContentSection";
 import RequestHistorySection from "./RequestHistorySection";
 import RequestNotesResearchSection from "./RequestNotesResearchSection";
@@ -9,7 +9,7 @@ import { formatCruiseLines } from "./CruiseLineMultiSelect";
 import PassengersSection from "./PassengersSection";
 import RequestForm, { emptyRequestForm, isReturnAfterDeparture } from "./RequestForm";
 import WorkflowsSection from "./WorkflowsSection";
-import { useClientContentFullWidth } from "./useClientContentFullWidth";
+import WorkspaceBandHeader from "./WorkspaceBandHeader";
 import { REQUEST_STATUS_CLOSED, WORKFLOW_TYPE_ENTER_TRIP_CRM } from "./formOptions";
 import type { TravelRequestDetail, TravelRequestInput } from "./types";
 import { formatDestinationSummary, formatDate, formatTimestamp } from "./utils";
@@ -20,6 +20,30 @@ type RequestWorkspaceProps = {
   onBack: () => void;
   onClosed: () => void;
 };
+
+type WorkspaceTab =
+  | "details"
+  | "passengers"
+  | "proposals"
+  | "communications"
+  | "workflow"
+  | "notes"
+  | "audit";
+
+type WorkspaceTabShellProps = {
+  title: string;
+  meta?: string;
+  children: ReactNode;
+};
+
+function WorkspaceTabShell({ title, meta, children }: WorkspaceTabShellProps) {
+  return (
+    <section className="request-form-band">
+      <WorkspaceBandHeader title={title} meta={meta} />
+      <div className="request-form-band-body workspace-embedded-band-body">{children}</div>
+    </section>
+  );
+}
 
 function requestToForm(request: TravelRequestDetail): TravelRequestInput {
   return {
@@ -60,6 +84,8 @@ function buildSummaryRequest(
 export default function RequestWorkspace({ requestId, onBack, onClosed }: RequestWorkspaceProps) {
   const [request, setRequest] = useState<TravelRequestDetail | null>(null);
   const [form, setForm] = useState<TravelRequestInput>(emptyRequestForm);
+  const [activeTab, setActiveTab] = useState<WorkspaceTab>("details");
+  const [focusedNoteId, setFocusedNoteId] = useState<number | null>(null);
   const [showCloseModal, setShowCloseModal] = useState(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
@@ -68,17 +94,6 @@ export default function RequestWorkspace({ requestId, onBack, onClosed }: Reques
   const [uploadingChat, setUploadingChat] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
-  const mainRef = useRef<HTMLDivElement>(null);
-  const sidebarTopRef = useRef<HTMLDivElement>(null);
-  const sidebarRef = useRef<HTMLDivElement>(null);
-  const clientContentRef = useRef<HTMLDivElement>(null);
-  const clientContentExpanded = useClientContentFullWidth(
-    mainRef,
-    sidebarTopRef,
-    sidebarRef,
-    clientContentRef,
-    Boolean(request && !loading),
-  );
 
   const isClosed = request?.status === REQUEST_STATUS_CLOSED;
   const activeWorkflow = request ? getActiveWorkflow(request.request_workflows) : null;
@@ -125,8 +140,7 @@ export default function RequestWorkspace({ requestId, onBack, onClosed }: Reques
     };
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function handleSave() {
     if (isClosed) {
       return;
     }
@@ -165,6 +179,11 @@ export default function RequestWorkspace({ requestId, onBack, onClosed }: Reques
     }
   }
 
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await handleSave();
+  }
+
   async function handleCloseRequest(closeReason: string) {
     setClosing(true);
     setMessage("");
@@ -186,32 +205,60 @@ export default function RequestWorkspace({ requestId, onBack, onClosed }: Reques
     }
   }
 
-  async function handleUploadTranscript(file: File) {
-    setUploadingTranscript(true);
+  async function handleUploadCommunication(
+    kind: "transcripts" | "chats",
+    file: File,
+    options: { autoGenerateAiSummary: boolean },
+  ) {
+    const setUploading = kind === "transcripts" ? setUploadingTranscript : setUploadingChat;
+    const upload = kind === "transcripts" ? uploadTranscript : uploadChatLog;
+    const label = kind === "transcripts" ? "Call transcript" : "Chat log";
+
+    setUploading(true);
     setError("");
     try {
-      await uploadTranscript(requestId, file);
+      const attachment = await upload(requestId, file);
       await refreshRequest();
-      setMessage("Call transcript uploaded.");
+      if (options.autoGenerateAiSummary) {
+        try {
+          const noteInput = await generateCommunicationAiSummary(requestId, kind, attachment.id);
+          await addNote(requestId, noteInput);
+          await refreshRequest();
+          setMessage(`${label} uploaded and AI summary note created.`);
+        } catch (aiError) {
+          setMessage(`${label} uploaded.`);
+          setError(
+            aiError instanceof Error
+              ? `AI summary could not be generated: ${aiError.message}`
+              : "AI summary could not be generated.",
+          );
+        }
+      } else {
+        setMessage(`${label} uploaded.`);
+      }
     } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Unable to upload transcript.");
+      setError(
+        uploadError instanceof Error ? uploadError.message : `Unable to upload ${label.toLowerCase()}.`,
+      );
     } finally {
-      setUploadingTranscript(false);
+      setUploading(false);
     }
   }
 
-  async function handleUploadChat(file: File) {
-    setUploadingChat(true);
-    setError("");
-    try {
-      await uploadChatLog(requestId, file);
-      await refreshRequest();
-      setMessage("Chat log uploaded.");
-    } catch (uploadError) {
-      setError(uploadError instanceof Error ? uploadError.message : "Unable to upload chat log.");
-    } finally {
-      setUploadingChat(false);
-    }
+  async function handleUploadTranscript(
+    file: File,
+    options: { autoGenerateAiSummary: boolean },
+  ) {
+    await handleUploadCommunication("transcripts", file, options);
+  }
+
+  async function handleUploadChat(file: File, options: { autoGenerateAiSummary: boolean }) {
+    await handleUploadCommunication("chats", file, options);
+  }
+
+  function handleOpenAiSummary(noteId: number) {
+    setFocusedNoteId(noteId);
+    setActiveTab("notes");
   }
 
   if (loading) {
@@ -227,77 +274,166 @@ export default function RequestWorkspace({ requestId, onBack, onClosed }: Reques
       <section className="card">
         <p>{error || "Request not found."}</p>
         <button type="button" onClick={onBack}>
-          Back to dashboard
+          Back to Request Dashboard
         </button>
       </section>
     );
   }
 
+  const summaryRequest = buildSummaryRequest(request, form);
+  const passengerCount = request.request_passengers.length;
+  const communicationCount =
+    request.call_transcripts.length +
+    request.chat_logs.length +
+    request.request_communications.length;
+
   return (
-    <div className="workspace">
-      <section className="request-summary-card">
-        <div className="request-summary-card-top">
+    <div className="workspace workspace-tabbed">
+      <section className="request-summary-card request-summary-card-compact">
+        <div className="request-summary-compact-row">
           <button type="button" className="back-button" onClick={onBack}>
-            Back to dashboard
+            Back
           </button>
-          <span
-            className={`status-badge ${
-              isClosed ? "status-badge-closed" : "status-badge-open"
-            }`}
-          >
-            {request.status}
-          </span>
-        </div>
 
-        <div className="request-summary-card-main">
-          <h2>Request #{request.id}</h2>
-          <p className="request-summary-client">
-            {form.first_name} {form.last_name}
-          </p>
-        </div>
+          <div className="request-summary-compact-title">
+            <h2>Request #{request.id}</h2>
+            <p className="request-summary-compact-client">
+              {form.first_name} {form.last_name}
+            </p>
+            <span
+              className={`status-badge ${
+                isClosed ? "status-badge-closed" : "status-badge-open"
+              }`}
+            >
+              {request.status}
+            </span>
+          </div>
 
-        <dl className="request-summary-details">
-          <div className="request-summary-detail">
-            <dt>Destination</dt>
-            <dd>{formatDestinationSummary(buildSummaryRequest(request, form))}</dd>
-          </div>
-          <div className="request-summary-detail">
-            <dt>Cruise lines</dt>
-            <dd>{formatCruiseLines(form.cruise_lines)}</dd>
-          </div>
-          <div className="request-summary-detail">
-            <dt>Travel dates</dt>
-            <dd>
-              {formatDate(form.departure_date)} to {formatDate(form.return_date)}
-            </dd>
-          </div>
-          <div className="request-summary-detail">
-            <dt>Last worked</dt>
-            <dd>
-              {request.last_worked_by.username} · {formatTimestamp(request.last_worked_at)}
-            </dd>
-          </div>
-          {request.close_reason ? (
-            <div className="request-summary-detail">
-              <dt>Close reason</dt>
-              <dd>{request.close_reason}</dd>
+          {!isClosed ? (
+            <div className="request-summary-compact-actions">
+              <button type="button" disabled={submitting} onClick={() => void handleSave()}>
+                {submitting ? "Saving..." : "Save"}
+              </button>
+              <button type="button" className="danger-button" onClick={() => setShowCloseModal(true)}>
+                Close request
+              </button>
             </div>
           ) : null}
-        </dl>
+        </div>
+
+        <div className="request-summary-compact-meta">
+          <span>{formatDestinationSummary(summaryRequest)}</span>
+          <span>{formatCruiseLines(form.cruise_lines)}</span>
+          <span>
+            {formatDate(form.departure_date)} – {formatDate(form.return_date)}
+          </span>
+          <span>
+            Last worked {request.last_worked_by.username} · {formatTimestamp(request.last_worked_at)}
+          </span>
+          {request.close_reason ? <span>Closed: {request.close_reason}</span> : null}
+        </div>
       </section>
 
-      <div
-        className={`workspace-grid${clientContentExpanded ? " is-client-expanded" : ""}`}
-      >
-        <div className="workspace-main" ref={mainRef}>
-          <section className="section-card">
-            <header className="section-card-header">
-              <h3>Request Details</h3>
-            </header>
-            <div className="section-card-body">
+      {message || error ? (
+        <div className="workspace-status-messages">
+          {message ? <p className="status success">{message}</p> : null}
+          {error ? <p className="status error">{error}</p> : null}
+        </div>
+      ) : null}
+
+      <section className="section-card section-tabs-card workspace-tabs-card">
+        <div className="section-tablist workspace-tablist" role="tablist" aria-label="Request workspace">
+          <button
+            type="button"
+            role="tab"
+            id="workspace-tab-details"
+            aria-selected={activeTab === "details"}
+            aria-controls="workspace-panel-details"
+            className={`section-tab${activeTab === "details" ? " is-active" : ""}`}
+            onClick={() => setActiveTab("details")}
+          >
+            Request detail
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="workspace-tab-passengers"
+            aria-selected={activeTab === "passengers"}
+            aria-controls="workspace-panel-passengers"
+            className={`section-tab${activeTab === "passengers" ? " is-active" : ""}`}
+            onClick={() => setActiveTab("passengers")}
+          >
+            Passengers ({passengerCount})
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="workspace-tab-proposals"
+            aria-selected={activeTab === "proposals"}
+            aria-controls="workspace-panel-proposals"
+            className={`section-tab${activeTab === "proposals" ? " is-active" : ""}`}
+            onClick={() => setActiveTab("proposals")}
+          >
+            Proposed cruises &amp; insurance
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="workspace-tab-communications"
+            aria-selected={activeTab === "communications"}
+            aria-controls="workspace-panel-communications"
+            className={`section-tab${activeTab === "communications" ? " is-active" : ""}`}
+            onClick={() => setActiveTab("communications")}
+          >
+            Communications ({communicationCount})
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="workspace-tab-workflow"
+            aria-selected={activeTab === "workflow"}
+            aria-controls="workspace-panel-workflow"
+            className={`section-tab${activeTab === "workflow" ? " is-active" : ""}`}
+            onClick={() => setActiveTab("workflow")}
+          >
+            Workflow
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="workspace-tab-notes"
+            aria-selected={activeTab === "notes"}
+            aria-controls="workspace-panel-notes"
+            className={`section-tab${activeTab === "notes" ? " is-active" : ""}`}
+            onClick={() => setActiveTab("notes")}
+          >
+            Notes &amp; research
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="workspace-tab-audit"
+            aria-selected={activeTab === "audit"}
+            aria-controls="workspace-panel-audit"
+            className={`section-tab${activeTab === "audit" ? " is-active" : ""}`}
+            onClick={() => setActiveTab("audit")}
+          >
+            Audit info
+          </button>
+        </div>
+
+        <div className="section-card-body section-tab-body workspace-tab-body">
+          {activeTab === "details" ? (
+            <div
+              role="tabpanel"
+              id="workspace-panel-details"
+              aria-labelledby="workspace-tab-details"
+              className="workspace-tab-panel"
+            >
               <RequestForm
                 formId="request-edit-form"
                 hideActions
+                layout="workspace"
                 form={form}
                 setForm={setForm}
                 onSubmit={handleSubmit}
@@ -306,91 +442,159 @@ export default function RequestWorkspace({ requestId, onBack, onClosed }: Reques
                 disabled={isClosed}
               />
             </div>
-          </section>
+          ) : null}
+
+          {activeTab === "passengers" ? (
+            <div
+              role="tabpanel"
+              id="workspace-panel-passengers"
+              aria-labelledby="workspace-tab-passengers"
+              className="workspace-tab-panel"
+            >
+              <PassengersSection
+                layout="table"
+                embeddedInWorkspace
+                requestId={requestId}
+                passengers={request.request_passengers}
+                disabled={isClosed}
+                onChanged={refreshRequest}
+                onError={setError}
+              />
+            </div>
+          ) : null}
+
+          {activeTab === "proposals" ? (
+            <div
+              role="tabpanel"
+              id="workspace-panel-proposals"
+              aria-labelledby="workspace-tab-proposals"
+              className="workspace-tab-panel"
+            >
+              <WorkspaceTabShell
+                title="Proposed cruises & insurance"
+                meta={`${request.proposed_cruises.length} cruises · ${request.quoted_insurance.length} quotes`}
+              >
+                <RequestProposalsSection
+                  embeddedInWorkspace
+                  requestId={requestId}
+                  cabinsNeeded={request.cabins_needed ?? 1}
+                  cabinHoldReservationIds={request.cabin_hold_reservation_ids ?? []}
+                  cruises={request.proposed_cruises}
+                  quotes={request.quoted_insurance}
+                  passengers={request.request_passengers}
+                  requestPassengerCount={request.passengers}
+                  disabled={isClosed}
+                  onChanged={refreshRequest}
+                  onError={setError}
+                  allowAcceptProposedCruise={enterTripInCrmActive && !isClosed}
+                />
+              </WorkspaceTabShell>
+            </div>
+          ) : null}
+
+          {activeTab === "communications" ? (
+            <div
+              role="tabpanel"
+              id="workspace-panel-communications"
+              aria-labelledby="workspace-tab-communications"
+              className="workspace-tab-panel"
+            >
+              <WorkspaceTabShell
+                title="Communications"
+                meta={`${request.call_transcripts.length} transcripts · ${request.chat_logs.length} chats · ${request.request_communications.length} emails`}
+              >
+                <RequestClientContentSection
+                  embeddedInWorkspace
+                  requestId={requestId}
+                  callTranscripts={request.call_transcripts}
+                  chatLogs={request.chat_logs}
+                  communications={request.request_communications}
+                  notes={request.request_notes}
+                  workflows={request.request_workflows}
+                  disabled={isClosed}
+                  uploadingTranscript={uploadingTranscript}
+                  uploadingChat={uploadingChat}
+                  onUploadTranscript={handleUploadTranscript}
+                  onUploadChat={handleUploadChat}
+                  onOpenAiSummary={handleOpenAiSummary}
+                  onChanged={refreshRequest}
+                  onError={setError}
+                />
+              </WorkspaceTabShell>
+            </div>
+          ) : null}
+
+          {activeTab === "workflow" ? (
+            <div
+              role="tabpanel"
+              id="workspace-panel-workflow"
+              aria-labelledby="workspace-tab-workflow"
+              className="workspace-tab-panel"
+            >
+              <WorkspaceTabShell
+                title="Workflow"
+                meta={activeWorkflow ? activeWorkflow.status : "No active workflow"}
+              >
+                <WorkflowsSection
+                  embeddedInWorkspace
+                  requestId={requestId}
+                  request={request}
+                  form={form}
+                  workflows={request.request_workflows}
+                  disabled={isClosed}
+                  onChanged={refreshRequest}
+                  onError={setError}
+                  onCloseRequest={handleCloseRequest}
+                />
+              </WorkspaceTabShell>
+            </div>
+          ) : null}
+
+          {activeTab === "notes" ? (
+            <div
+              role="tabpanel"
+              id="workspace-panel-notes"
+              aria-labelledby="workspace-tab-notes"
+              className="workspace-tab-panel"
+            >
+              <WorkspaceTabShell
+                title="Notes & research"
+                meta={`${request.request_notes.length} notes · ${request.research_documents.length} documents`}
+              >
+                <RequestNotesResearchSection
+                  embeddedInWorkspace
+                  requestId={requestId}
+                  notes={request.request_notes}
+                  researchDocuments={request.research_documents}
+                  focusedNoteId={focusedNoteId}
+                  onFocusedNoteHandled={() => setFocusedNoteId(null)}
+                  disabled={isClosed}
+                  onChanged={refreshRequest}
+                  onError={setError}
+                />
+              </WorkspaceTabShell>
+            </div>
+          ) : null}
+
+          {activeTab === "audit" ? (
+            <div
+              role="tabpanel"
+              id="workspace-panel-audit"
+              aria-labelledby="workspace-tab-audit"
+              className="workspace-tab-panel"
+            >
+              <WorkspaceTabShell title="Audit information" meta="Change history and completed tasks">
+                <RequestHistorySection
+                  embeddedInWorkspace
+                  requestId={requestId}
+                  passengers={request.request_passengers}
+                  workflows={request.request_workflows}
+                />
+              </WorkspaceTabShell>
+            </div>
+          ) : null}
         </div>
-
-        <div className="workspace-sidebar" ref={sidebarRef}>
-          <div className="workspace-sidebar-top" ref={sidebarTopRef}>
-            <PassengersSection
-              requestId={requestId}
-              passengers={request.request_passengers}
-              disabled={isClosed}
-              onChanged={refreshRequest}
-              onError={setError}
-            />
-            <RequestProposalsSection
-              requestId={requestId}
-              cabinsNeeded={request.cabins_needed ?? 1}
-              cabinHoldReservationIds={request.cabin_hold_reservation_ids ?? []}
-              cruises={request.proposed_cruises}
-              quotes={request.quoted_insurance}
-              passengers={request.request_passengers}
-              disabled={isClosed}
-              onChanged={refreshRequest}
-              onError={setError}
-              allowAcceptProposedCruise={enterTripInCrmActive && !isClosed}
-            />
-          </div>
-          <div className="workspace-client-content" ref={clientContentRef}>
-            <RequestClientContentSection
-              requestId={requestId}
-              callTranscripts={request.call_transcripts}
-              chatLogs={request.chat_logs}
-              communications={request.request_communications}
-              workflows={request.request_workflows}
-              disabled={isClosed}
-              uploadingTranscript={uploadingTranscript}
-              uploadingChat={uploadingChat}
-              onUploadTranscript={handleUploadTranscript}
-              onUploadChat={handleUploadChat}
-              onChanged={refreshRequest}
-              onError={setError}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="workspace-full-width">
-        <WorkflowsSection
-          requestId={requestId}
-          request={request}
-          form={form}
-          workflows={request.request_workflows}
-          disabled={isClosed}
-          onChanged={refreshRequest}
-          onError={setError}
-          onCloseRequest={handleCloseRequest}
-        />
-      </div>
-
-      <RequestNotesResearchSection
-        requestId={requestId}
-        notes={request.request_notes}
-        researchDocuments={request.research_documents}
-        disabled={isClosed}
-        onChanged={refreshRequest}
-        onError={setError}
-      />
-
-      <RequestHistorySection
-        requestId={requestId}
-        passengers={request.request_passengers}
-        workflows={request.request_workflows}
-      />
-
-      {message ? <p className="status success">{message}</p> : null}
-      {error ? <p className="status error">{error}</p> : null}
-
-      {!isClosed ? (
-        <div className="workspace-actions">
-          <button type="submit" form="request-edit-form" disabled={submitting}>
-            {submitting ? "Saving..." : "Save Changes"}
-          </button>
-          <button type="button" className="danger-button" onClick={() => setShowCloseModal(true)}>
-            Close request
-          </button>
-        </div>
-      ) : null}
+      </section>
 
       <CloseRequestModal
         open={showCloseModal}

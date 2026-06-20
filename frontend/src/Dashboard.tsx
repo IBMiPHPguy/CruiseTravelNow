@@ -1,11 +1,13 @@
+import { REQUEST_DASHBOARD_PAGE_TITLE } from "./branding";
 import { formatCruiseLines } from "./CruiseLineMultiSelect";
 import { PRIMARY_CLOSE_REASON } from "./formOptions";
 import { useEffect, useState } from "react";
 import { fetchOpenRequests } from "./api";
+import { formatMoney } from "./cabinPricing";
+import { getNextTaskBadgeClass } from "./nextTaskBadge";
+import OpenRequestQuickActions from "./OpenRequestQuickActions";
 import type { DashboardData, DashboardOpenRequest } from "./types";
 import { formatDestinationSummary, formatDate, formatTimestamp } from "./utils";
-import ViewIcon from "./ViewIcon";
-import IconTooltip from "./IconTooltip";
 
 const OPEN_REQUESTS_PAGE_SIZE = 25;
 
@@ -17,11 +19,19 @@ function formatSuccessfulSalesCloseRate(rate: number | null): string {
   return Number.isInteger(rate) ? `${rate}%` : `${rate.toFixed(1)}%`;
 }
 
+function formatPipelineValueSubtitle(value: number): string {
+  if (value <= 0) {
+    return "No quoted value yet";
+  }
+  return `${formatMoney(value)} in active quotes`;
+}
+
 type DashboardProps = {
   dashboard: DashboardData;
   onNewRequest: () => void;
   onOpenRequest: (requestId: number) => void;
   onOpenClosedRequests: () => void;
+  onDashboardRefresh: () => void;
 };
 
 export default function Dashboard({
@@ -29,6 +39,7 @@ export default function Dashboard({
   onNewRequest,
   onOpenRequest,
   onOpenClosedRequests,
+  onDashboardRefresh,
 }: DashboardProps) {
   const [openRequests, setOpenRequests] = useState<DashboardOpenRequest[]>([]);
   const [openRequestsLoading, setOpenRequestsLoading] = useState(true);
@@ -38,6 +49,7 @@ export default function Dashboard({
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(0);
+  const [listVersion, setListVersion] = useState(0);
 
   async function loadOpenRequests(activeSearch: string, activePage: number) {
     setOpenRequestsLoading(true);
@@ -61,6 +73,11 @@ export default function Dashboard({
     }
   }
 
+  function handleRequestStatusChanged() {
+    setListVersion((current) => current + 1);
+    onDashboardRefresh();
+  }
+
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setSearchQuery(searchInput.trim());
@@ -72,7 +89,7 @@ export default function Dashboard({
 
   useEffect(() => {
     void loadOpenRequests(searchQuery, page);
-  }, [searchQuery, page, dashboard.open_count]);
+  }, [searchQuery, page, dashboard.open_count, listVersion]);
 
   const pageStart = total === 0 ? 0 : (page - 1) * OPEN_REQUESTS_PAGE_SIZE + 1;
   const pageEnd = total === 0 ? 0 : Math.min(page * OPEN_REQUESTS_PAGE_SIZE, total);
@@ -82,58 +99,73 @@ export default function Dashboard({
 
   return (
     <section className="dashboard">
-      <div className="stats-grid">
-        <article className="stat-card stat-card-warning">
-          <header className="stat-card-header">
-            <span className="stat-label">Stale requests</span>
-          </header>
-          <div className="stat-card-body">
-            <strong className="stat-value">{dashboard.stale_count}</strong>
-            <div className="stat-card-meta">
-              <span className="stat-hint">No request activity in 3+ days</span>
-            </div>
+      <section className="request-summary-card request-summary-card-compact dashboard-summary-card">
+        <div className="request-summary-compact-row">
+          <div className="request-summary-compact-title">
+            <h2>{REQUEST_DASHBOARD_PAGE_TITLE}</h2>
           </div>
-        </article>
-        <article
-          className="stat-card stat-card-closed stat-card-clickable"
-          role="button"
-          tabIndex={0}
-          onClick={onOpenClosedRequests}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              event.preventDefault();
-              onOpenClosedRequests();
-            }
-          }}
-        >
-          <header className="stat-card-header">
-            <span className="stat-label">Closed requests</span>
-          </header>
-          <div className="stat-card-body">
-            <strong className="stat-value">{dashboard.closed_count}</strong>
-            <div className="stat-card-meta">
-              <div className="stat-subcounts">
-                <span>
-                  {PRIMARY_CLOSE_REASON}: {dashboard.purchased_closed_count}
-                </span>
-                <span>Other close reasons: {dashboard.other_closed_count}</span>
-              </div>
-              <span className="stat-success-rate">
-                Successful Sales Close Rate: {formatSuccessfulSalesCloseRate(dashboard.successful_sales_close_rate)}
-              </span>
-              <span className="stat-hint stat-hint-neutral">View closed requests and reopen if needed</span>
-            </div>
-          </div>
-        </article>
-      </div>
+        </div>
+        <div className="request-summary-compact-meta">
+          <span>
+            {dashboard.open_count} open requests · {formatPipelineValueSubtitle(dashboard.total_pipeline_value)}
+          </span>
+        </div>
 
-      <section className="card open-requests-table-card">
+        <div className="stats-grid dashboard-stats-grid">
+          <article className="stat-card stat-card-warning">
+            <header className="stat-card-header">
+              <span className="stat-label">Stale requests</span>
+            </header>
+            <div className="stat-card-body">
+              <strong className="stat-value">{dashboard.stale_count}</strong>
+              <div className="stat-card-meta">
+                <span className="stat-hint">No request activity in 3+ days</span>
+              </div>
+            </div>
+          </article>
+          <article
+            className="stat-card stat-card-closed stat-card-clickable"
+            role="button"
+            tabIndex={0}
+            onClick={onOpenClosedRequests}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onOpenClosedRequests();
+              }
+            }}
+          >
+            <header className="stat-card-header">
+              <span className="stat-label">Closed requests</span>
+            </header>
+            <div className="stat-card-body">
+              <strong className="stat-value">{dashboard.closed_count}</strong>
+              <div className="stat-card-meta">
+                <div className="stat-subcounts">
+                  <span>
+                    {PRIMARY_CLOSE_REASON}: {dashboard.purchased_closed_count}
+                  </span>
+                  <span>Other close reasons: {dashboard.other_closed_count}</span>
+                </div>
+                <span className="stat-success-rate">
+                  Successful Sales Close Rate: {formatSuccessfulSalesCloseRate(dashboard.successful_sales_close_rate)}
+                </span>
+                <span className="stat-hint stat-hint-neutral">View closed requests and reopen if needed</span>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section className="card open-requests-table-card dashboard-open-requests-card">
         <header className="open-requests-table-card-header">
           <div className="open-requests-table-card-header-main">
-            <h3>Open Requests</h3>
-            <span className="open-requests-table-card-count" aria-label={`${dashboard.open_count} open requests`}>
-              {dashboard.open_count}
-            </span>
+            <div className="open-requests-table-card-title-group">
+              <h3>Open Requests</h3>
+              <span className="open-requests-table-card-count" aria-label={`${dashboard.open_count} open requests`}>
+                {dashboard.open_count}
+              </span>
+            </div>
           </div>
           <button type="button" onClick={onNewRequest}>
             New Request
@@ -186,11 +218,19 @@ export default function Dashboard({
                             {formatDate(request.return_date)}
                           </div>
                         </td>
-                        <td>
+                        <td className="open-requests-next-task-cell">
                           {request.next_open_task ? (
                             <>
-                              <div className="open-requests-next-task-title">{request.next_open_task.title}</div>
-                              <div className="meta">{request.next_open_task.workflow_name} workflow</div>
+                              <div className="open-requests-next-task-badge-wrap">
+                                <span
+                                  className={`next-task-badge ${getNextTaskBadgeClass(request.next_open_task.task_key)}`}
+                                >
+                                  {request.next_open_task.title}
+                                </span>
+                              </div>
+                              <div className="meta open-requests-next-task-workflow">
+                                {request.next_open_task.workflow_name} workflow
+                              </div>
                             </>
                           ) : (
                             <div className="meta">No open workflow task</div>
@@ -205,16 +245,12 @@ export default function Dashboard({
                           </div>
                         </td>
                         <td className="dashboard-table-actions-cell">
-                          <IconTooltip label={`View request for ${request.first_name} ${request.last_name}`}>
-                            <button
-                              type="button"
-                              className="icon-button"
-                              aria-label={`View request for ${request.first_name} ${request.last_name}`}
-                              onClick={() => onOpenRequest(request.id)}
-                            >
-                              <ViewIcon />
-                            </button>
-                          </IconTooltip>
+                          <OpenRequestQuickActions
+                            request={request}
+                            onView={() => onOpenRequest(request.id)}
+                            onStatusChanged={handleRequestStatusChanged}
+                            onError={setOpenRequestsError}
+                          />
                         </td>
                       </tr>
                     ))}

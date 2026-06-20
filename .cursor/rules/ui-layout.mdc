@@ -1,0 +1,16 @@
+---
+description: UI layout preferences — avoid horizontal scrolling in the app
+alwaysApply: true
+---
+
+# UI layout — no horizontal scroll
+
+The user dislikes horizontal scrollbars in the UI. Treat this as a standing design constraint.
+
+When building or changing layouts, tables, tabs, cards, or forms:
+
+- Do not use `overflow-x: auto` or `overflow-x: scroll` unless the user explicitly asks for scrollable overflow.
+- Prefer `table-layout: fixed`, `min-width: 0`, `overflow-wrap: anywhere`, and `word-break: break-word` so wide content wraps instead of scrolling.
+- Let tables reflow on narrow viewports (hide or stack non-essential columns) rather than introducing a horizontal scrollbar.
+- Match the pattern used on dashboard tables: `overflow: visible` on wrappers, content wraps inside cells.
+- After UI changes, check that the affected view does not show a horizontal scrollbar at common desktop widths.
