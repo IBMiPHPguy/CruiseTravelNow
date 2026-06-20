@@ -1,6 +1,6 @@
 from datetime import date, datetime
 
-from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import JSON, Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -22,6 +22,7 @@ class User(Base):
 
 class TravelRequest(Base):
     __tablename__ = "travel_requests"
+    __table_args__ = (Index("idx_travel_requests_status_created", "status", "created_at"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     first_name: Mapped[str] = mapped_column(String(80), nullable=False)
@@ -39,11 +40,11 @@ class TravelRequest(Base):
     passengers: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     cabins_needed: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     cabin_hold_reservation_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
-    status: Mapped[str] = mapped_column(String(40), nullable=False, default="Open")
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="Open", index=True)
     close_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
-    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     updated_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
@@ -106,21 +107,22 @@ class TravelRequest(Base):
 
 class Passenger(Base):
     __tablename__ = "passengers"
+    __table_args__ = (Index("idx_passengers_last_first", "last_name", "first_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     first_name: Mapped[str] = mapped_column(String(80), nullable=False)
     last_name: Mapped[str] = mapped_column(String(80), nullable=False)
-    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True, index=True)
     date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
     address_line_1: Mapped[str | None] = mapped_column(String(120), nullable=True)
     address_line_2: Mapped[str | None] = mapped_column(String(120), nullable=True)
     city: Mapped[str | None] = mapped_column(String(80), nullable=True)
-    state_or_province: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    state_or_province: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
     postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
     country: Mapped[str | None] = mapped_column(String(80), nullable=True)
     qualifiers: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
-    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True, index=True)
     created_by_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -135,8 +137,10 @@ class RequestPassenger(Base):
     __tablename__ = "request_passengers"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    travel_request_id: Mapped[int] = mapped_column(ForeignKey("travel_requests.id"), nullable=False)
-    passenger_id: Mapped[int] = mapped_column(ForeignKey("passengers.id"), nullable=False)
+    travel_request_id: Mapped[int] = mapped_column(
+        ForeignKey("travel_requests.id"), nullable=False, index=True
+    )
+    passenger_id: Mapped[int] = mapped_column(ForeignKey("passengers.id"), nullable=False, index=True)
     is_primary: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     qualifiers: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -242,6 +246,7 @@ class RequestPassenger(Base):
 
 class TravelRequestAudit(Base):
     __tablename__ = "travel_request_audits"
+    __table_args__ = (Index("idx_tra_request_field", "travel_request_id", "field_name"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     travel_request_id: Mapped[int] = mapped_column(ForeignKey("travel_requests.id"), nullable=False)
@@ -249,7 +254,7 @@ class TravelRequestAudit(Base):
     from_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     to_value: Mapped[str | None] = mapped_column(Text, nullable=True)
     changed_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
-    changed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    changed_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
 
     travel_request: Mapped[TravelRequest] = relationship(back_populates="request_audits")
     changed_by: Mapped[User] = relationship(foreign_keys=[changed_by_id])
@@ -358,11 +363,12 @@ def default_proposed_cruise_includes() -> dict:
 
 class ProposedCruise(Base):
     __tablename__ = "proposed_cruises"
+    __table_args__ = (Index("idx_proposed_cruises_request_status", "travel_request_id", "status"),)
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     travel_request_id: Mapped[int] = mapped_column(ForeignKey("travel_requests.id"), nullable=False)
-    departure_date: Mapped[date] = mapped_column(Date, nullable=False)
-    cruise_line: Mapped[str] = mapped_column(String(120), nullable=False)
+    departure_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    cruise_line: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
     ship: Mapped[str] = mapped_column(String(120), nullable=False)
     number_of_nights: Mapped[int] = mapped_column(Integer, nullable=False)
     itinerary_name: Mapped[str] = mapped_column(String(160), nullable=False)
@@ -377,7 +383,7 @@ class ProposedCruise(Base):
     cabin_pricing: Mapped[list | None] = mapped_column(JSON, nullable=True)
     cabin_rooms: Mapped[list | None] = mapped_column(JSON, nullable=True)
     includes: Mapped[dict] = mapped_column(JSON, nullable=False, default=default_proposed_cruise_includes)
-    status: Mapped[str] = mapped_column(String(40), nullable=False, default="Proposed")
+    status: Mapped[str] = mapped_column(String(40), nullable=False, default="Proposed", index=True)
     rejection_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
     rejection_reason_detail: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)

@@ -90,6 +90,8 @@ CREATE TABLE IF NOT EXISTS request_passengers (
     qualifiers JSON NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_request_passengers_travel_request (travel_request_id),
+    INDEX idx_request_passengers_passenger (passenger_id),
     CONSTRAINT fk_request_passengers_request FOREIGN KEY (travel_request_id) REFERENCES travel_requests(id) ON DELETE CASCADE,
     CONSTRAINT fk_request_passengers_passenger FOREIGN KEY (passenger_id) REFERENCES passengers(id),
     CONSTRAINT uq_request_passengers_request_passenger UNIQUE (travel_request_id, passenger_id)
@@ -278,3 +280,23 @@ CREATE TABLE IF NOT EXISTS request_research_documents (
     CONSTRAINT fk_request_research_documents_request FOREIGN KEY (travel_request_id) REFERENCES travel_requests(id) ON DELETE CASCADE,
     CONSTRAINT fk_request_research_documents_user FOREIGN KEY (uploaded_by_id) REFERENCES users(id)
 );
+
+-- Performance indexes (dashboard, reports, analytics)
+CREATE INDEX idx_travel_requests_status ON travel_requests(status);
+CREATE INDEX idx_travel_requests_created_at ON travel_requests(created_at);
+CREATE INDEX idx_travel_requests_created_by ON travel_requests(created_by_id);
+CREATE INDEX idx_travel_requests_status_created ON travel_requests(status, created_at);
+
+CREATE INDEX idx_proposed_cruises_status ON proposed_cruises(status);
+CREATE INDEX idx_proposed_cruises_cruise_line ON proposed_cruises(cruise_line);
+CREATE INDEX idx_proposed_cruises_departure ON proposed_cruises(departure_date);
+CREATE INDEX idx_proposed_cruises_request_status ON proposed_cruises(travel_request_id, status);
+
+CREATE INDEX idx_passengers_is_active ON passengers(is_active);
+CREATE INDEX idx_passengers_last_first ON passengers(last_name, first_name);
+CREATE INDEX idx_passengers_state ON passengers(state_or_province);
+CREATE INDEX idx_passengers_email ON passengers(email);
+CREATE INDEX idx_passengers_phone ON passengers(phone);
+
+CREATE INDEX idx_tra_request_field ON travel_request_audits(travel_request_id, field_name);
+CREATE INDEX idx_tra_changed_at ON travel_request_audits(changed_at);

@@ -3,7 +3,8 @@ from io import BytesIO
 from openpyxl import Workbook
 
 from app.models import Passenger
-from app.services.client_import_parse_service import PREVIEW_ROW_LIMIT, build_client_import_template_xlsx
+from app.services.client_import_parse_service import PREVIEW_ROW_LIMIT
+from app.services.client_import_template_service import build_client_import_template_xlsx
 from app.services.client_import_service import execute_client_import, validate_client_import_mapping
 
 
