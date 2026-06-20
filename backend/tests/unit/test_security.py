@@ -28,8 +28,12 @@ def test_hash_and_verify_password():
 
 
 def test_create_and_decode_access_token():
-    token = create_access_token("agent-one")
-    assert decode_access_token(token) == "agent-one"
+    from app.tenant_constants import DEFAULT_AGENCY_ID
+
+    token = create_access_token("agent-one", DEFAULT_AGENCY_ID)
+    claims = decode_access_token(token)
+    assert claims.username == "agent-one"
+    assert claims.agency_id == DEFAULT_AGENCY_ID
 
 
 def test_decode_access_token_rejects_invalid_token():

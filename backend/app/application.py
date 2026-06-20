@@ -12,13 +12,21 @@ from app.config import settings
 from app.database import Base, SessionLocal, engine
 from app.rate_limit import limiter
 from app.security_config import validate_production_settings
+from app.tenant_session import configure_tenant_session
+
+configure_tenant_session()
 
 
 def seed_admin_user(db) -> None:
     from app.models import User
     from app.security import hash_password
+    from app.services.agency_service import ensure_default_agency
+    from app.tenant_constants import DEFAULT_AGENCY_ID
+
+    default_agency = ensure_default_agency(db)
 
     if not settings.seed_admin_username or not settings.seed_admin_password:
+        db.commit()
         return
 
     email = settings.seed_admin_email or f"{settings.seed_admin_username}@example.com"
@@ -26,10 +34,13 @@ def seed_admin_user(db) -> None:
     if existing:
         if existing.email != email:
             existing.email = email
-            db.commit()
+        if existing.agency_id != default_agency.id:
+            existing.agency_id = default_agency.id
+        db.commit()
         return
 
     user = User(
+        agency_id=DEFAULT_AGENCY_ID,
         username=settings.seed_admin_username,
         email=email,
         password_hash=hash_password(settings.seed_admin_password),

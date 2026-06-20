@@ -2,6 +2,7 @@ from sqlalchemy import String, cast, func, or_
 from sqlalchemy.orm import Session
 
 from app.models import Passenger, RequestPassenger
+from app.tenant_context import require_current_agency_id
 
 CLIENTS_PAGE_SIZE_DEFAULT = 25
 CLIENTS_PAGE_SIZE_MAX = 100
@@ -42,6 +43,7 @@ def create_passenger_record(
     created_by_id: int | None,
 ) -> Passenger:
     passenger = Passenger(
+        agency_id=require_current_agency_id(),
         first_name=first_name,
         last_name=last_name,
         email=email.strip() if email and email.strip() else None,
@@ -80,6 +82,7 @@ def create_client_record(
     created_by_id: int | None,
 ) -> Passenger:
     passenger = Passenger(
+        agency_id=require_current_agency_id(),
         first_name=first_name.strip(),
         last_name=last_name.strip(),
         email=_normalize_optional_text(email),

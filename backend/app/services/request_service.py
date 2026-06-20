@@ -414,6 +414,8 @@ def create_request(db: Session, payload: TravelRequestCreate, current_user: User
         passenger = db.get(Passenger, payload.primary_passenger_id)
         if passenger is None:
             raise HTTPException(status_code=404, detail="Passenger not found.")
+        if passenger.agency_id != current_user.agency_id:
+            raise HTTPException(status_code=404, detail="Passenger not found.")
         if not passenger.is_active:
             raise HTTPException(status_code=400, detail="Inactive clients cannot be used for new requests.")
         data["first_name"] = passenger.first_name
@@ -425,6 +427,7 @@ def create_request(db: Session, payload: TravelRequestCreate, current_user: User
 
     request = TravelRequest(
         **data,
+        agency_id=current_user.agency_id,
         status=REQUEST_STATUS_OPEN,
         created_by_id=current_user.id,
         updated_by_id=current_user.id,

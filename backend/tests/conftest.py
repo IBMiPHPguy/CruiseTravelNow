@@ -21,6 +21,9 @@ from app.database import Base, get_db  # noqa: E402
 from app.main import app  # noqa: E402
 from app.models import User  # noqa: E402
 from app.security import hash_password  # noqa: E402
+from app.services.agency_service import ensure_default_agency  # noqa: E402
+from app.tenant_constants import DEFAULT_AGENCY_ID  # noqa: E402
+from app.tenant_context import clear_current_agency_id, set_current_agency_id  # noqa: E402
 
 
 def _create_test_engine():
@@ -57,6 +60,9 @@ def db(session_factory, engine):
     session = session_factory(bind=connection)
     session.begin_nested()
 
+    ensure_default_agency(session)
+    set_current_agency_id(DEFAULT_AGENCY_ID)
+
     @event.listens_for(session, "after_transaction_end")
     def restart_savepoint(sess, trans):
         if trans.nested and not trans._parent.nested:
@@ -64,6 +70,7 @@ def db(session_factory, engine):
             sess.begin_nested()
 
     yield session
+    clear_current_agency_id()
     session.close()
     transaction.rollback()
     connection.close()
@@ -83,6 +90,7 @@ def client(db):
 @pytest.fixture
 def test_user(db):
     user = User(
+        agency_id=DEFAULT_AGENCY_ID,
         username="testuser",
         email="test@example.com",
         password_hash=hash_password("TestPassword1!"),

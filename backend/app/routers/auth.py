@@ -9,6 +9,8 @@ from app.models import User
 from app.rate_limit import limiter
 from app.schemas import TokenResponse, UserCreate, UserRead
 from app.security import create_access_token, hash_password, verify_password
+from app.services.agency_service import ensure_default_agency
+from app.tenant_constants import DEFAULT_AGENCY_ID
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -33,7 +35,9 @@ def register_user(
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+    default_agency = ensure_default_agency(db)
     user = User(
+        agency_id=default_agency.id,
         username=payload.username,
         email=payload.email,
         password_hash=password_hash,
@@ -59,7 +63,7 @@ def login(
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    token = create_access_token(user.username)
+    token = create_access_token(user.username, user.agency_id)
     return TokenResponse(access_token=token, user=UserRead.model_validate(user))
 
 
