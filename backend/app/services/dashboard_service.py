@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 
 from app.schemas import DashboardResponse
 from app.services.agency_rollup_service import get_or_refresh_dashboard_rollup
+from app.services.request_service import count_stale_open_requests
 
 
 def get_dashboard(db: Session, agency_id: str) -> DashboardResponse:
@@ -16,7 +17,7 @@ def get_dashboard(db: Session, agency_id: str) -> DashboardResponse:
 
     return DashboardResponse(
         open_count=rollup.open_leads_count,
-        stale_count=rollup.stale_count,
+        stale_count=count_stale_open_requests(db, agency_id),
         closed_count=closed_count,
         purchased_closed_count=purchased_closed_count,
         other_closed_count=other_closed_count,

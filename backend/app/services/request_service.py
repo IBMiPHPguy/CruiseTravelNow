@@ -133,6 +133,22 @@ def build_dashboard_open_request(request: TravelRequest) -> DashboardOpenRequest
     )
 
 
+def count_stale_open_requests(db: Session, agency_id: str) -> int:
+    open_requests = (
+        dashboard_query(db)
+        .filter(
+            TravelRequest.agency_id == agency_id,
+            TravelRequest.status == REQUEST_STATUS_OPEN,
+        )
+        .all()
+    )
+    return sum(
+        1
+        for request in open_requests
+        if is_stale_by_last_worked(resolve_last_worked(request)[0])
+    )
+
+
 def dashboard_query(db: Session):
     return db.query(TravelRequest).options(
         joinedload(TravelRequest.created_by),
@@ -495,9 +511,8 @@ def update_request(
     sync_primary_passenger_from_request(request, db, current_user)
     touch_request(request, current_user)
     db.commit()
-    if "status" in updates:
-        from app.services.agency_rollup_service import schedule_agency_rollup_refresh
+    from app.services.agency_rollup_service import schedule_agency_rollup_refresh
 
-        schedule_agency_rollup_refresh(current_user.agency_id)
+    schedule_agency_rollup_refresh(current_user.agency_id)
     request = detail_query(db).filter(TravelRequest.id == request_id).one()
     return request_detail_to_read(request)
