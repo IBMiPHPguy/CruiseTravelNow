@@ -11,6 +11,7 @@ def configure_tenant_session() -> None:
     from app.models import (
         CallTranscript,
         ChatLog,
+        MarketingCampaign,
         Passenger,
         ProposedCruise,
         QuotedInsurance,
@@ -24,6 +25,7 @@ def configure_tenant_session() -> None:
 
     TENANT_SCOPED_MODELS = (
         TravelRequest,
+        MarketingCampaign,
         Passenger,
         ProposedCruise,
         RequestCommunication,

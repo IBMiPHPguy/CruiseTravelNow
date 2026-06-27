@@ -476,6 +476,9 @@ export type TravelRequest = {
   cabin_hold_reservation_ids: string[][];
   status: string;
   close_reason: string | null;
+  lead_source: string | null;
+  referral_source_name: string | null;
+  marketing_campaign_id: string | null;
   created_by: UserAudit;
   updated_by: UserAudit;
   created_at: string;
@@ -628,6 +631,9 @@ export type TravelRequestInput = {
   primary_passenger_id?: number;
   /** Primary passenger discounts; set at create time only, not edited on the request form. */
   qualifiers?: string[];
+  lead_source?: string;
+  referral_source_name?: string;
+  marketing_campaign_id?: string;
 };
 
 export type TravelRequestUpdateInput = Partial<TravelRequestInput> & {
@@ -646,6 +652,7 @@ export type RegisterInput = {
 export type AppView =
   | { type: "dashboard" }
   | { type: "sales-analytics" }
+  | { type: "marketing-campaigns" }
   | { type: "clients" }
   | { type: "reports" }
   | { type: "report"; reportId: ReportId }
@@ -654,7 +661,39 @@ export type AppView =
   | { type: "new" }
   | { type: "edit"; requestId: number };
 
-export type AppNavItem = "dashboard" | "sales-analytics" | "clients" | "reports" | "team";
+export type AppNavItem = "dashboard" | "sales-analytics" | "marketing-campaigns" | "clients" | "reports" | "team";
+
+export type MarketingCampaign = {
+  id: string;
+  agency_id: string;
+  campaign_name: string;
+  campaign_type: string;
+  monthly_spend: number;
+  start_date: string;
+  end_date: string | null;
+  created_at: string;
+};
+
+export type MarketingCampaignInput = {
+  campaign_name: string;
+  campaign_type: string;
+  monthly_spend: number;
+  start_date: string;
+  end_date?: string;
+};
+
+export type MarketingCampaignUpdateInput = Partial<MarketingCampaignInput> & {
+  end_date?: string | null;
+};
+
+export type MarketingCampaignTimeframe = "all" | "active" | "past";
+
+export type MarketingCampaignSummary = {
+  active_monthly_budget: number;
+  top_roi_campaign_name: string | null;
+  top_roi_percent: number | null;
+  total_attributed_volume: number;
+};
 
 export type SalesAnalyticsMonthCommission = {
   month_key: string;

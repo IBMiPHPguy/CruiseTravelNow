@@ -294,3 +294,30 @@ export const COMMUNICATION_TYPE_RESEARCH_PROPOSAL = "research_proposal";
 export const COMMUNICATION_TYPE_RESEARCH_FOLLOW_UP = "research_follow_up";
 export const COMMUNICATION_TYPE_BOOKING = "booking_confirmation";
 export const COMMUNICATION_TYPE_AGENCY = "agency_follow_up";
+
+export const LEAD_SOURCE_REPEAT_CUSTOMER = "Repeat Customer";
+export const LEAD_SOURCE_REFERRAL = "Referral";
+export const LEAD_SOURCE_GOOGLE_SEARCH = "Google Search";
+export const LEAD_SOURCE_AI_SUGGESTION = "AI Suggestion";
+export const LEAD_SOURCE_MARKETING_CAMPAIGN = "Marketing Campaign";
+export const LEAD_SOURCES = [
+  LEAD_SOURCE_REPEAT_CUSTOMER,
+  LEAD_SOURCE_REFERRAL,
+  LEAD_SOURCE_GOOGLE_SEARCH,
+  LEAD_SOURCE_AI_SUGGESTION,
+  LEAD_SOURCE_MARKETING_CAMPAIGN,
+] as const;
+
+export const MARKETING_CAMPAIGN_TYPES = [
+  "Facebook/Instagram",
+  "Google AdSense",
+  "Print",
+  "Radio",
+  "TV",
+  "YouTube",
+  "Email Newsletter",
+  "Local Event",
+] as const;
+
+export type LeadSource = (typeof LEAD_SOURCES)[number];
+export type MarketingCampaignType = (typeof MARKETING_CAMPAIGN_TYPES)[number];

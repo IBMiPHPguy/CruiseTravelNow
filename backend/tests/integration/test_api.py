@@ -228,6 +228,63 @@ def test_reports_endpoints_return_manifest_and_ledger(client, auth_headers):
 
 
 @pytest.mark.integration
+def test_marketing_campaigns_crud_and_lead_attribution(client, auth_headers, sample_request_payload):
+    create_campaign = client.post(
+        "/api/marketing-campaigns",
+        headers=auth_headers,
+        json={
+            "campaign_name": "Summer Facebook Push",
+            "campaign_type": "Facebook/Instagram",
+            "monthly_spend": 450,
+            "start_date": "2026-04-01",
+            "end_date": None,
+        },
+    )
+    assert create_campaign.status_code == 201, create_campaign.text
+    campaign_id = create_campaign.json()["id"]
+
+    list_response = client.get("/api/marketing-campaigns?timeframe=all", headers=auth_headers)
+    assert list_response.status_code == 200
+    assert any(item["id"] == campaign_id for item in list_response.json())
+
+    request_payload = {
+        **sample_request_payload,
+        "lead_source": "Marketing Campaign",
+        "marketing_campaign_id": campaign_id,
+    }
+    create_request = client.post("/api/requests", headers=auth_headers, json=request_payload)
+    assert create_request.status_code == 201, create_request.text
+    assert create_request.json()["marketing_campaign_id"] == campaign_id
+
+    delete_response = client.delete(f"/api/marketing-campaigns/{campaign_id}", headers=auth_headers)
+    assert delete_response.status_code == 204
+
+
+@pytest.mark.integration
+def test_marketing_campaign_summary_reads_cached_rollups(client, auth_headers, sample_request_payload):
+    create_campaign = client.post(
+        "/api/marketing-campaigns",
+        headers=auth_headers,
+        json={
+            "campaign_name": "Summary Campaign",
+            "campaign_type": "Email Newsletter",
+            "monthly_spend": 1200,
+            "start_date": "2026-01-01",
+            "end_date": None,
+        },
+    )
+    assert create_campaign.status_code == 201, create_campaign.text
+
+    summary_response = client.get("/api/marketing-campaigns/summary", headers=auth_headers)
+    assert summary_response.status_code == 200, summary_response.text
+    summary = summary_response.json()
+    assert "active_monthly_budget" in summary
+    assert "top_roi_campaign_name" in summary
+    assert "top_roi_percent" in summary
+    assert "total_attributed_volume" in summary
+
+
+@pytest.mark.integration
 def test_register_rejected_when_public_registration_disabled(client, monkeypatch):
     from app.config import settings
 

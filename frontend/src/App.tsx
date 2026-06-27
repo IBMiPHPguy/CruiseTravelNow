@@ -6,6 +6,7 @@ import Dashboard from "./Dashboard";
 import ClosedRequestsPage from "./ClosedRequestsPage";
 import ClientsPage from "./ClientsPage";
 import SalesAnalytics from "./SalesAnalytics";
+import MarketingCampaignsPage from "./MarketingCampaignsPage";
 import AppSidebar, { activeNavItemForView } from "./AppSidebar";
 import Login from "./Login";
 import RequestForm, { emptyRequestForm, isReturnAfterDeparture } from "./RequestForm";
@@ -14,6 +15,10 @@ import ReportsPage from "./ReportsPage";
 import RequestWorkspace from "./RequestWorkspace";
 import TeamPage from "./TeamPage";
 import { formatCruiseLines } from "./CruiseLineMultiSelect";
+import {
+  LEAD_SOURCE_MARKETING_CAMPAIGN,
+  LEAD_SOURCE_REFERRAL,
+} from "./formOptions";
 import { buildQuickNoteInput } from "./noteForm";
 import { BRAND_APP_TITLE, brandedDocumentTitle, REQUEST_DASHBOARD_PAGE_TITLE } from "./branding";
 import type { AppView, DashboardData, TravelRequest, TravelRequestInput, User } from "./types";
@@ -119,6 +124,10 @@ function App() {
       document.title = brandedDocumentTitle("Team");
       return;
     }
+    if (view.type === "marketing-campaigns") {
+      document.title = brandedDocumentTitle("Marketing Campaigns");
+      return;
+    }
     document.title = BRAND_APP_TITLE;
   }, [currentUser, view.type]);
 
@@ -162,6 +171,7 @@ function App() {
       return;
     }
 
+    const leadSource = form.lead_source?.trim() || undefined;
     const payload: TravelRequestInput = {
       ...form,
       excluded_cruise_lines: form.excluded_cruise_lines ?? [],
@@ -170,6 +180,13 @@ function App() {
         : null,
       first_passenger_date_of_birth: form.first_passenger_date_of_birth?.trim() || undefined,
       primary_passenger_id: form.primary_passenger_id,
+      lead_source: leadSource,
+      referral_source_name:
+        leadSource === LEAD_SOURCE_REFERRAL ? form.referral_source_name?.trim() || undefined : undefined,
+      marketing_campaign_id:
+        leadSource === LEAD_SOURCE_MARKETING_CAMPAIGN
+          ? form.marketing_campaign_id?.trim() || undefined
+          : undefined,
     };
 
     try {
@@ -258,6 +275,10 @@ function App() {
                 setView({ type: "sales-analytics" });
                 return;
               }
+              if (item === "marketing-campaigns") {
+                setView({ type: "marketing-campaigns" });
+                return;
+              }
               if (item === "reports") {
                 setView({ type: "reports" });
                 return;
@@ -315,6 +336,8 @@ function App() {
           }}
         />
       ) : null}
+
+      {view.type === "marketing-campaigns" ? <MarketingCampaignsPage /> : null}
 
       {view.type === "clients" ? <ClientsPage /> : null}
 
@@ -437,6 +460,7 @@ function App() {
                   submitLabel="Create Request"
                   creationNote={creationNote}
                   onCreationNoteChange={setCreationNote}
+                  showLeadAttribution
                 />
               </div>
             </div>

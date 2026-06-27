@@ -107,13 +107,27 @@ The **Reports** sidebar view lists five interactive ledgers grouped by category.
 
 Report data is served from `/api/reports/*`. Filter metadata (workflow tasks, advisor names, residence states) comes from `GET /api/reports/meta` (advisor and state lists are cached per agency).
 
+### Marketing campaigns
+
+Agency-scoped campaign tracking lives under `/api/marketing-campaigns`. The CRM sidebar includes a **Marketing Campaigns** page (create form + ledger with active/past filters). When creating or editing a travel request, agents can set **Source** to bind referrals or marketing campaigns.
+
+- `GET /api/marketing-campaigns?timeframe=all|active|past`
+- `POST /api/marketing-campaigns`
+- `GET /api/marketing-campaigns/{campaign_id}`
+- `PATCH /api/marketing-campaigns/{campaign_id}`
+- `DELETE /api/marketing-campaigns/{campaign_id}`
+
+All routes enforce tenant isolation; a campaign ID from another agency returns **404 Not Found**.
+
+Marketing ROI summary cards read from the Phase 3a `agency_dashboard_rollups` cache (refreshed with dashboard rollups when campaigns change or booked cruises update).
+
 **Booked-cruise aggregation:** Sales manifest gross/commission totals sum all Accepted and Deposited cruises on a request. The supplier ledger groups volume, commission, and booking counts by cruise line at the cruise-row level (side-by-side lines on one request each get their own ledger row).
 
 Phone numbers in report and client **display** views use `(xxx) xxx-xxxx` formatting; input fields keep the raw stored value.
 
 ### Travel requests
 
-Each request stores client contact info, destination (with region-specific details), travel dates, cabin preferences, qualifiers, and cabin count. Requests can be **Open** or **Closed** with a close reason.
+Each request stores client contact info, destination (with region-specific details), travel dates, cabin preferences, qualifiers, and cabin count. Requests can be **Open** or **Closed** with a close reason. Optional lead attribution fields include `lead_source`, `referral_source_name` (when source is Referral), and `marketing_campaign_id` (when source is Marketing Campaign).
 
 Closing a request records the reason and prevents most edits until reopened. Reopen is available from the closed-requests page unless the close reason is **Purchased - Trip Created**.
 
@@ -505,6 +519,15 @@ Shared query parameters include `page`, `page_size`, and `timeframe` where appli
 - `GET /api/reports/advisor-scorecard` — `timeframe`, `advisor`
 - `GET /api/reports/passenger-demographics` — `state`, `qualifier` (repeat for multi-select OR filter)
 
+Marketing campaigns (tenant-scoped):
+
+- `GET /api/marketing-campaigns?timeframe=all|active|past`
+- `POST /api/marketing-campaigns`
+- `GET /api/marketing-campaigns/{campaign_id}`
+- `PATCH /api/marketing-campaigns/{campaign_id}`
+- `DELETE /api/marketing-campaigns/{campaign_id}`
+- `GET /api/marketing-campaigns/summary` — cached ROI summary (`active_monthly_budget`, `top_roi_campaign_name`, `top_roi_percent`, `total_attributed_volume`) from `agency_dashboard_rollups`
+
 Interactive docs with request/response schemas: http://localhost:8080/docs
 
 ## Testing
@@ -559,7 +582,7 @@ Use `scripts/run-tests.ps1` as the recommended entry point; it starts `test-db` 
 
 ## Database migrations
 
-Fresh installs use `db/init.sql` via Docker entrypoint (includes multi-tenant Phases 0–2, Phase 3a rollups, and per-cruise cabin-hold reservation IDs). Existing volumes may need incremental migrations applied manually:
+Fresh installs use `db/init.sql` via Docker entrypoint (includes multi-tenant Phases 0–2, Phase 3a rollups, per-cruise cabin-hold reservation IDs, and marketing campaigns with lead attribution). Existing volumes may need incremental migrations applied manually:
 
 ```powershell
 # Auth (users table)
@@ -571,6 +594,8 @@ Get-Content db\migrate_multi_tenant_phase1.sql | docker compose exec -T db mysql
 Get-Content db\migrate_multi_tenant_phase2.sql | docker compose exec -T db mysql -uroot -prootsecret sailspipeline
 Get-Content db\migrate_multi_tenant_phase3_rollups.sql | docker compose exec -T db mysql -uroot -prootsecret sailspipeline
 Get-Content db\migrate_proposed_cruise_reservation_ids.sql | docker compose exec -T db mysql -uroot -prootsecret sailspipeline
+Get-Content db\migrate_marketing_campaigns.sql | docker compose exec -T db mysql -uroot -prootsecret sailspipeline
+Get-Content db\migrate_marketing_campaign_rollups.sql | docker compose exec -T db mysql -uroot -prootsecret sailspipeline
 Get-Content db\migrate_platform_operator_null_agency.sql | docker compose exec -T db mysql -uroot -prootsecret sailspipeline
 Get-Content db\migrate_invitation_cancellation.sql | docker compose exec -T db mysql -uroot -prootsecret sailspipeline
 

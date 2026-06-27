@@ -69,6 +69,16 @@ def get_passenger_for_agency(db: Session, passenger_id: int, agency_id: str) -> 
     return passenger
 
 
+def get_marketing_campaign_for_agency(db: Session, campaign_id: str, agency_id: str):
+    from app.models import MarketingCampaign
+
+    campaign = db.get(MarketingCampaign, campaign_id)
+    if campaign is None:
+        raise NOT_FOUND
+    assert_same_agency(entity_agency_id=campaign.agency_id, expected_agency_id=agency_id)
+    return campaign
+
+
 def assert_child_belongs_to_request(
     *,
     child_agency_id: str,

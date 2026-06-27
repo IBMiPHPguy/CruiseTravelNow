@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -277,6 +277,75 @@ def test_refresh_agency_report_metadata_cache_stores_active_advisors_and_states(
 
 
 @pytest.mark.unit
+def test_get_dashboard_stale_count_is_live_not_cached_rollup(db, test_user):
+    stale_updated_at = datetime.now(UTC).replace(tzinfo=None) - timedelta(days=10)
+    fresh_updated_at = datetime.now(UTC).replace(tzinfo=None)
+
+    stale_request = TravelRequest(
+        agency_id=DEFAULT_AGENCY_ID,
+        first_name="Stale",
+        last_name="Lead",
+        email="stale@example.com",
+        phone="5551110001",
+        cruise_lines=["Royal Caribbean International"],
+        excluded_cruise_lines=[],
+        destination="Caribbean",
+        destination_details={"caribbean_regions": ["Eastern"]},
+        departure_date=date(2026, 7, 1),
+        return_date=date(2026, 7, 8),
+        cabin_types=["Balcony"],
+        passengers=2,
+        cabins_needed=1,
+        status=REQUEST_STATUS_OPEN,
+        created_by_id=test_user.id,
+        updated_by_id=test_user.id,
+        updated_at=stale_updated_at,
+    )
+    fresh_request = TravelRequest(
+        agency_id=DEFAULT_AGENCY_ID,
+        first_name="Fresh",
+        last_name="Lead",
+        email="fresh@example.com",
+        phone="5551110002",
+        cruise_lines=["Royal Caribbean International"],
+        excluded_cruise_lines=[],
+        destination="Alaska",
+        destination_details=None,
+        departure_date=date(2026, 8, 1),
+        return_date=date(2026, 8, 8),
+        cabin_types=["Balcony"],
+        passengers=2,
+        cabins_needed=1,
+        status=REQUEST_STATUS_OPEN,
+        created_by_id=test_user.id,
+        updated_by_id=test_user.id,
+        updated_at=fresh_updated_at,
+    )
+    db.add_all([stale_request, fresh_request])
+    db.flush()
+
+    rollup = AgencyDashboardRollup(
+        agency_id=DEFAULT_AGENCY_ID,
+        open_leads_count=2,
+        proposals_pending_count=0,
+        completed_bookings_count=0,
+        total_volume_booked=Decimal("0"),
+        total_commission_booked=Decimal("0"),
+        stale_count=2,
+        closed_count=0,
+        purchased_closed_count=0,
+        total_pipeline_value=Decimal("0"),
+        last_refreshed_at=datetime.now(UTC).replace(tzinfo=None),
+    )
+    db.add(rollup)
+    db.commit()
+
+    dashboard = get_dashboard(db, DEFAULT_AGENCY_ID)
+
+    assert dashboard.stale_count == 1
+
+
+@pytest.mark.unit
 def test_get_dashboard_reads_persisted_rollups(db, test_user):
     rollup = AgencyDashboardRollup(
         agency_id=DEFAULT_AGENCY_ID,
@@ -297,7 +366,7 @@ def test_get_dashboard_reads_persisted_rollups(db, test_user):
     dashboard = get_dashboard(db, DEFAULT_AGENCY_ID)
 
     assert dashboard.open_count == 4
-    assert dashboard.stale_count == 1
+    assert dashboard.stale_count == 0
     assert dashboard.closed_count == 5
     assert dashboard.purchased_closed_count == 3
     assert dashboard.other_closed_count == 2

@@ -1,6 +1,7 @@
 import { FormEvent } from "react";
 import CruiseLineMultiSelect from "./CruiseLineMultiSelect";
 import DestinationFields from "./DestinationFields";
+import LeadAttributionFields from "./LeadAttributionFields";
 import TravelDatesField, { isReturnAfterDeparture } from "./TravelDatesField";
 import WorkspaceBandHeader from "./WorkspaceBandHeader";
 import { CABIN_TYPES, DESTINATIONS } from "./formOptions";
@@ -22,6 +23,7 @@ type RequestFormProps = {
   layout?: "default" | "workspace";
   creationNote?: string;
   onCreationNoteChange?: (value: string) => void;
+  showLeadAttribution?: boolean;
 };
 
 function toggleListItem(values: string[], item: string): string[] {
@@ -55,6 +57,7 @@ export default function RequestForm({
   layout = "default",
   creationNote,
   onCreationNoteChange,
+  showLeadAttribution = false,
 }: RequestFormProps) {
   function patchForm(patch: Partial<TravelRequestInput>, clearLinkedPassenger = false) {
     setForm({
@@ -394,6 +397,10 @@ export default function RequestForm({
           </div>
         </section>
 
+        {showLeadAttribution ? (
+          <LeadAttributionFields form={form} setForm={setForm} disabled={disabled} />
+        ) : null}
+
         {onCreationNoteChange ? (
           <section className="request-form-band" aria-label="Quick intake note">
             <WorkspaceBandHeader title="Quick note" />
@@ -535,6 +542,9 @@ export const emptyRequestForm: TravelRequestInput = {
   passengers: 2,
   cabins_needed: 1,
   first_passenger_date_of_birth: "",
+  lead_source: "",
+  referral_source_name: "",
+  marketing_campaign_id: "",
 };
 
 export { isReturnAfterDeparture };

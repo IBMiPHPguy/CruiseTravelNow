@@ -133,6 +133,22 @@ def build_dashboard_open_request(request: TravelRequest) -> DashboardOpenRequest
     )
 
 
+def count_stale_open_requests(db: Session, agency_id: str) -> int:
+    open_requests = (
+        dashboard_query(db)
+        .filter(
+            TravelRequest.agency_id == agency_id,
+            TravelRequest.status == REQUEST_STATUS_OPEN,
+        )
+        .all()
+    )
+    return sum(
+        1
+        for request in open_requests
+        if is_stale_by_last_worked(resolve_last_worked(request)[0])
+    )
+
+
 def dashboard_query(db: Session):
     return db.query(TravelRequest).options(
         joinedload(TravelRequest.created_by),
@@ -409,6 +425,11 @@ def create_request(db: Session, payload: TravelRequestCreate, current_user: User
         if payload.first_passenger_date_of_birth is not None:
             passenger.date_of_birth = payload.first_passenger_date_of_birth
 
+    if payload.marketing_campaign_id is not None:
+        from app.services.agency_service import get_marketing_campaign_for_agency
+
+        get_marketing_campaign_for_agency(db, payload.marketing_campaign_id, current_user.agency_id)
+
     request = TravelRequest(
         **data,
         agency_id=current_user.agency_id,
@@ -492,12 +513,16 @@ def update_request(
     record_travel_request_field_changes(db, request, request_changes, current_user)
     apply_updates(request, updates)
 
+    if "marketing_campaign_id" in updates and updates["marketing_campaign_id"] is not None:
+        from app.services.agency_service import get_marketing_campaign_for_agency
+
+        get_marketing_campaign_for_agency(db, updates["marketing_campaign_id"], current_user.agency_id)
+
     sync_primary_passenger_from_request(request, db, current_user)
     touch_request(request, current_user)
     db.commit()
-    if "status" in updates:
-        from app.services.agency_rollup_service import schedule_agency_rollup_refresh
+    from app.services.agency_rollup_service import schedule_agency_rollup_refresh
 
-        schedule_agency_rollup_refresh(current_user.agency_id)
+    schedule_agency_rollup_refresh(current_user.agency_id)
     request = detail_query(db).filter(TravelRequest.id == request_id).one()
     return request_detail_to_read(request)

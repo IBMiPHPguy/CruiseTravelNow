@@ -3,6 +3,7 @@ import { REQUEST_DASHBOARD_PAGE_TITLE } from "./branding";
 import {
   BarChartNavIcon,
   CruiseShipNavIcon,
+  FunnelNavIcon,
   PersonNavIcon,
   ReportsNavIcon,
   TeamNavIcon,
@@ -23,6 +24,7 @@ const BASE_NAV_ITEMS: Array<{
 }> = [
   { id: "dashboard", label: REQUEST_DASHBOARD_PAGE_TITLE, icon: CruiseShipNavIcon },
   { id: "sales-analytics", label: "Sales Analytics", icon: BarChartNavIcon },
+  { id: "marketing-campaigns", label: "Marketing Campaigns", icon: FunnelNavIcon },
   { id: "clients", label: "Clients", icon: PersonNavIcon },
   { id: "reports", label: "Reports", icon: ReportsNavIcon },
 ];
@@ -70,6 +72,9 @@ export function activeNavItemForView(viewType: string): AppNavItem | null {
   }
   if (viewType === "sales-analytics") {
     return "sales-analytics";
+  }
+  if (viewType === "marketing-campaigns") {
+    return "marketing-campaigns";
   }
   if (viewType === "clients") {
     return "clients";
