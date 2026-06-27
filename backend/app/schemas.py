@@ -300,6 +300,34 @@ class TravelRequestBase(BaseModel):
     qualifiers: list[str] = Field(default_factory=list)
     passengers: int = Field(ge=1, le=20)
     cabins_needed: int = Field(ge=1, le=10, default=1)
+    lead_source: str | None = Field(default=None, max_length=100)
+    referral_source_name: str | None = Field(default=None, max_length=255)
+    marketing_campaign_id: str | None = Field(default=None, max_length=36)
+
+    @field_validator("lead_source")
+    @classmethod
+    def validate_lead_source(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        from app.constants import LEAD_SOURCES
+
+        if value not in LEAD_SOURCES:
+            raise ValueError("Invalid lead source selected.")
+        return value
+
+    @model_validator(mode="after")
+    def validate_lead_attribution(self) -> "TravelRequestBase":
+        from app.lead_attribution import normalize_lead_attribution
+
+        source, referral, campaign_id = normalize_lead_attribution(
+            lead_source=self.lead_source,
+            referral_source_name=self.referral_source_name,
+            marketing_campaign_id=self.marketing_campaign_id,
+        )
+        self.lead_source = source
+        self.referral_source_name = referral
+        self.marketing_campaign_id = campaign_id
+        return self
 
     @model_validator(mode="after")
     def validate_travel_dates(self) -> "TravelRequestBase":
@@ -605,6 +633,40 @@ class TravelRequestUpdate(BaseModel):
     cabin_hold_reservation_ids: list[list[str]] | None = None
     status: str | None = Field(default=None, min_length=1, max_length=40)
     close_reason: str | None = Field(default=None, max_length=120)
+    lead_source: str | None = Field(default=None, max_length=100)
+    referral_source_name: str | None = Field(default=None, max_length=255)
+    marketing_campaign_id: str | None = Field(default=None, max_length=36)
+
+    @field_validator("lead_source")
+    @classmethod
+    def validate_update_lead_source(cls, value: str | None) -> str | None:
+        if value is None or not value.strip():
+            return None
+        from app.constants import LEAD_SOURCES
+
+        if value not in LEAD_SOURCES:
+            raise ValueError("Invalid lead source selected.")
+        return value
+
+    @model_validator(mode="after")
+    def validate_update_lead_attribution(self) -> "TravelRequestUpdate":
+        if (
+            self.lead_source is None
+            and self.referral_source_name is None
+            and self.marketing_campaign_id is None
+        ):
+            return self
+        from app.lead_attribution import normalize_lead_attribution
+
+        source, referral, campaign_id = normalize_lead_attribution(
+            lead_source=self.lead_source,
+            referral_source_name=self.referral_source_name,
+            marketing_campaign_id=self.marketing_campaign_id,
+        )
+        self.lead_source = source
+        self.referral_source_name = referral
+        self.marketing_campaign_id = campaign_id
+        return self
 
     @field_validator("cabin_hold_reservation_ids", mode="before")
     @classmethod
@@ -1583,3 +1645,65 @@ class SupplierLedgerPageRead(BaseModel):
     page: int
     page_size: int
     total_pages: int
+
+
+class MarketingCampaignCreate(BaseModel):
+    campaign_name: str = Field(min_length=1, max_length=255)
+    campaign_type: str = Field(min_length=1, max_length=100)
+    monthly_spend: Decimal = Field(default=Decimal("0.00"), ge=0)
+    start_date: date
+    end_date: date | None = None
+
+    @field_validator("campaign_type")
+    @classmethod
+    def validate_campaign_type(cls, value: str) -> str:
+        from app.constants import MARKETING_CAMPAIGN_TYPES
+
+        if value not in MARKETING_CAMPAIGN_TYPES:
+            raise ValueError("Invalid campaign type selected.")
+        return value
+
+    @model_validator(mode="after")
+    def validate_campaign_dates(self) -> "MarketingCampaignCreate":
+        if self.end_date is not None and self.end_date < self.start_date:
+            raise ValueError("End date must be on or after the start date.")
+        return self
+
+
+class MarketingCampaignUpdate(BaseModel):
+    campaign_name: str | None = Field(default=None, min_length=1, max_length=255)
+    campaign_type: str | None = Field(default=None, min_length=1, max_length=100)
+    monthly_spend: Decimal | None = Field(default=None, ge=0)
+    start_date: date | None = None
+    end_date: date | None = None
+
+    @field_validator("campaign_type")
+    @classmethod
+    def validate_update_campaign_type(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        from app.constants import MARKETING_CAMPAIGN_TYPES
+
+        if value not in MARKETING_CAMPAIGN_TYPES:
+            raise ValueError("Invalid campaign type selected.")
+        return value
+
+
+class MarketingCampaignRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    agency_id: str
+    campaign_name: str
+    campaign_type: str
+    monthly_spend: float
+    start_date: date
+    end_date: date | None = None
+    created_at: datetime
+
+
+class MarketingCampaignSummaryRead(BaseModel):
+    active_monthly_budget: float
+    top_roi_campaign_name: str | None = None
+    top_roi_percent: float | None = None
+    total_attributed_volume: float

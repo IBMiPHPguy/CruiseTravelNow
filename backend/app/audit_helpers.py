@@ -23,6 +23,9 @@ TRAVEL_REQUEST_AUDIT_FIELDS = (
     "cabin_hold_reservation_ids",
     "status",
     "close_reason",
+    "lead_source",
+    "referral_source_name",
+    "marketing_campaign_id",
 )
 
 PASSENGER_AUDIT_FIELDS = (

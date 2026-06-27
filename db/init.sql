@@ -58,6 +58,10 @@ CREATE TABLE IF NOT EXISTS agency_dashboard_rollups (
     closed_count INT NOT NULL DEFAULT 0,
     purchased_closed_count INT NOT NULL DEFAULT 0,
     total_pipeline_value DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    marketing_active_monthly_budget DECIMAL(15, 2) NOT NULL DEFAULT 0,
+    marketing_top_roi_campaign_name VARCHAR(255) NULL,
+    marketing_top_roi_percent DECIMAL(10, 2) NULL,
+    marketing_total_attributed_volume DECIMAL(15, 2) NOT NULL DEFAULT 0,
     last_refreshed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_agency_dashboard_rollups_agency FOREIGN KEY (agency_id) REFERENCES agencies(id)
 );
@@ -108,6 +112,9 @@ CREATE TABLE IF NOT EXISTS travel_requests (
     cabin_hold_reservation_ids JSON NULL,
     status VARCHAR(40) NOT NULL DEFAULT 'Open',
     close_reason VARCHAR(120) NULL,
+    lead_source VARCHAR(100) NULL,
+    referral_source_name VARCHAR(255) NULL,
+    marketing_campaign_id CHAR(36) NULL,
     created_by_id INT NOT NULL,
     updated_by_id INT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -116,6 +123,26 @@ CREATE TABLE IF NOT EXISTS travel_requests (
     CONSTRAINT fk_travel_requests_created_by FOREIGN KEY (created_by_id) REFERENCES users(id),
     CONSTRAINT fk_travel_requests_updated_by FOREIGN KEY (updated_by_id) REFERENCES users(id)
 );
+
+CREATE TABLE IF NOT EXISTS marketing_campaigns (
+    id CHAR(36) NOT NULL PRIMARY KEY,
+    agency_id CHAR(36) NOT NULL,
+    campaign_name VARCHAR(255) NOT NULL,
+    campaign_type VARCHAR(100) NOT NULL,
+    monthly_spend DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
+    start_date DATE NOT NULL,
+    end_date DATE NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_marketing_campaigns_agency FOREIGN KEY (agency_id) REFERENCES agencies(id),
+    INDEX idx_marketing_campaigns_agency (agency_id),
+    INDEX idx_marketing_campaigns_agency_start (agency_id, start_date)
+);
+
+ALTER TABLE travel_requests
+    ADD CONSTRAINT fk_travel_requests_marketing_campaign
+        FOREIGN KEY (marketing_campaign_id) REFERENCES marketing_campaigns(id) ON DELETE SET NULL;
+
+CREATE INDEX idx_travel_requests_marketing_campaign ON travel_requests(marketing_campaign_id);
 
 CREATE TABLE IF NOT EXISTS call_transcripts (
     id INT AUTO_INCREMENT PRIMARY KEY,

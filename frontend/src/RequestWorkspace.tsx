@@ -60,6 +60,9 @@ function requestToForm(request: TravelRequestDetail): TravelRequestInput {
     cabin_types: request.cabin_types,
     passengers: request.passengers,
     cabins_needed: request.cabins_needed ?? 1,
+    lead_source: request.lead_source ?? "",
+    referral_source_name: request.referral_source_name ?? "",
+    marketing_campaign_id: request.marketing_campaign_id ?? "",
   };
 }
 
@@ -440,6 +443,7 @@ export default function RequestWorkspace({ requestId, onBack, onClosed }: Reques
                 submitting={submitting}
                 submitLabel="Save Changes"
                 disabled={isClosed}
+                showLeadAttribution
               />
             </div>
           ) : null}

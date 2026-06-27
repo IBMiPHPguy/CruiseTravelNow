@@ -39,6 +39,24 @@ class Agency(Base):
         back_populates="agency",
         uselist=False,
     )
+    marketing_campaigns: Mapped[list["MarketingCampaign"]] = relationship(back_populates="agency")
+
+
+class MarketingCampaign(Base):
+    __tablename__ = "marketing_campaigns"
+    __table_args__ = (Index("idx_marketing_campaigns_agency_start", "agency_id", "start_date"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    agency_id: Mapped[str] = mapped_column(String(36), ForeignKey("agencies.id"), nullable=False, index=True)
+    campaign_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    campaign_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    monthly_spend: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    agency: Mapped["Agency"] = relationship(back_populates="marketing_campaigns")
+    travel_requests: Mapped[list["TravelRequest"]] = relationship(back_populates="marketing_campaign")
 
 
 class AgencyDashboardRollup(Base):
@@ -54,6 +72,10 @@ class AgencyDashboardRollup(Base):
     closed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     purchased_closed_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     total_pipeline_value: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    marketing_active_monthly_budget: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
+    marketing_top_roi_campaign_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    marketing_top_roi_percent: Mapped[float | None] = mapped_column(Numeric(10, 2), nullable=True)
+    marketing_total_attributed_volume: Mapped[float] = mapped_column(Numeric(15, 2), nullable=False, default=0)
     last_refreshed_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, server_default=func.now())
 
     agency: Mapped["Agency"] = relationship(back_populates="dashboard_rollup")
@@ -160,6 +182,11 @@ class TravelRequest(Base):
     cabin_hold_reservation_ids: Mapped[list | None] = mapped_column(JSON, nullable=True)
     status: Mapped[str] = mapped_column(String(40), nullable=False, default="Open", index=True)
     close_reason: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    lead_source: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    referral_source_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    marketing_campaign_id: Mapped[str | None] = mapped_column(
+        String(36), ForeignKey("marketing_campaigns.id"), nullable=True, index=True
+    )
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     updated_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
@@ -169,6 +196,7 @@ class TravelRequest(Base):
 
     created_by: Mapped[User] = relationship(foreign_keys=[created_by_id])
     updated_by: Mapped[User] = relationship(foreign_keys=[updated_by_id])
+    marketing_campaign: Mapped["MarketingCampaign | None"] = relationship(back_populates="travel_requests")
     call_transcripts: Mapped[list["CallTranscript"]] = relationship(
         back_populates="travel_request",
         cascade="all, delete-orphan",

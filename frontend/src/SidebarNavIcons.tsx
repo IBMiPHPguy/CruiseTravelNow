@@ -82,6 +82,16 @@ export function ReportsNavIcon() {
   );
 }
 
+export function FunnelNavIcon() {
+  return (
+    <SidebarIcon>
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.75">
+        <path d="M4 4h16l-6 7v5l-4 2v-7L4 4Z" strokeLinejoin="round" />
+      </svg>
+    </SidebarIcon>
+  );
+}
+
 export function SalesFinancialCategoryIcon() {
   return (
     <NavStrokeIcon className="reports-category-icon">

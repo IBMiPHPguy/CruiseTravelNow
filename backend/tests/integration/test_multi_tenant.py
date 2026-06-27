@@ -143,3 +143,30 @@ def test_cross_tenant_open_requests_list_excludes_other_agency_data(
     assert own_list.status_code == 200
     own_ids = {item["id"] for item in own_list.json()["items"]}
     assert request_id in own_ids
+
+
+@pytest.mark.integration
+def test_cross_tenant_marketing_campaign_returns_404(
+    client,
+    auth_headers,
+    other_agency_auth_headers,
+):
+    create_response = client.post(
+        "/api/marketing-campaigns",
+        headers=auth_headers,
+        json={
+            "campaign_name": "Default Agency Radio",
+            "campaign_type": "Radio",
+            "monthly_spend": 200,
+            "start_date": "2026-01-01",
+        },
+    )
+    assert create_response.status_code == 201, create_response.text
+    campaign_id = create_response.json()["id"]
+
+    own_response = client.get(f"/api/marketing-campaigns/{campaign_id}", headers=auth_headers)
+    assert own_response.status_code == 200
+
+    cross_response = client.get(f"/api/marketing-campaigns/{campaign_id}", headers=other_agency_auth_headers)
+    assert cross_response.status_code == 404
+    assert cross_response.json()["detail"] == "Not found."

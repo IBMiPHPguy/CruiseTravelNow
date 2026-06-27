@@ -21,6 +21,11 @@ import type {
   PassengerDemographicsPage,
   SalesAnalyticsData,
   SalesAnalyticsYearSummary,
+  MarketingCampaign,
+  MarketingCampaignInput,
+  MarketingCampaignSummary,
+  MarketingCampaignTimeframe,
+  MarketingCampaignUpdateInput,
   RequestNote,
   RequestNoteInput,
   RequestPassenger,
@@ -904,4 +909,70 @@ export async function fetchHealth(): Promise<{ status: string; service: string }
     throw new Error("API health check failed.");
   }
   return response.json();
+}
+
+export async function fetchMarketingCampaigns(
+  timeframe: MarketingCampaignTimeframe = "all",
+): Promise<MarketingCampaign[]> {
+  const params = new URLSearchParams({ timeframe });
+  const response = await apiFetch(`${API_BASE}/marketing-campaigns?${params.toString()}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response, "Unable to load marketing campaigns."));
+  }
+  return response.json();
+}
+
+export async function fetchMarketingCampaignSummary(): Promise<MarketingCampaignSummary> {
+  const response = await apiFetch(`${API_BASE}/marketing-campaigns/summary`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response, "Unable to load marketing campaign summary."));
+  }
+  return response.json();
+}
+
+export async function createMarketingCampaign(payload: MarketingCampaignInput): Promise<MarketingCampaign> {
+  const response = await apiFetch(`${API_BASE}/marketing-campaigns`, {
+    method: "POST",
+    headers: authHeaders(true),
+    body: JSON.stringify({
+      ...payload,
+      end_date: payload.end_date?.trim() || null,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response, "Unable to create marketing campaign."));
+  }
+  return response.json();
+}
+
+export async function updateMarketingCampaign(
+  campaignId: string,
+  payload: MarketingCampaignUpdateInput,
+): Promise<MarketingCampaign> {
+  const response = await apiFetch(`${API_BASE}/marketing-campaigns/${campaignId}`, {
+    method: "PATCH",
+    headers: authHeaders(true),
+    body: JSON.stringify({
+      ...payload,
+      end_date: payload.end_date === undefined ? undefined : payload.end_date?.trim() || null,
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response, "Unable to update marketing campaign."));
+  }
+  return response.json();
+}
+
+export async function deleteMarketingCampaign(campaignId: string): Promise<void> {
+  const response = await apiFetch(`${API_BASE}/marketing-campaigns/${campaignId}`, {
+    method: "DELETE",
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(await parseApiError(response, "Unable to delete marketing campaign."));
+  }
 }

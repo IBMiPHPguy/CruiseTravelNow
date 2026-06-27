@@ -21,6 +21,7 @@ from app.services.booked_cruise_metrics import (
     calculate_open_pipeline_value,
     get_booked_cruise_aggregates,
 )
+from app.services.marketing_campaign_roi_service import compute_marketing_campaign_rollup_metrics
 from app.services.request_service import build_dashboard_open_request, dashboard_query
 
 logger = logging.getLogger(__name__)
@@ -77,6 +78,7 @@ def refresh_agency_dashboard_rollups(db: Session, agency_id: str) -> AgencyDashb
 
     booked_aggregates = get_booked_cruise_aggregates(db, agency_id)
     total_pipeline_value = calculate_open_pipeline_value(db, agency_id=agency_id)
+    marketing_metrics = compute_marketing_campaign_rollup_metrics(db, agency_id)
     refreshed_at = datetime.now(UTC).replace(tzinfo=None)
 
     rollup = db.get(AgencyDashboardRollup, agency_id)
@@ -93,6 +95,10 @@ def refresh_agency_dashboard_rollups(db: Session, agency_id: str) -> AgencyDashb
     rollup.closed_count = closed_count
     rollup.purchased_closed_count = purchased_closed_count
     rollup.total_pipeline_value = total_pipeline_value
+    rollup.marketing_active_monthly_budget = marketing_metrics.active_monthly_budget
+    rollup.marketing_top_roi_campaign_name = marketing_metrics.top_roi_campaign_name
+    rollup.marketing_top_roi_percent = marketing_metrics.top_roi_percent
+    rollup.marketing_total_attributed_volume = marketing_metrics.total_attributed_volume
     rollup.last_refreshed_at = refreshed_at
     db.commit()
     db.refresh(rollup)

@@ -425,6 +425,11 @@ def create_request(db: Session, payload: TravelRequestCreate, current_user: User
         if payload.first_passenger_date_of_birth is not None:
             passenger.date_of_birth = payload.first_passenger_date_of_birth
 
+    if payload.marketing_campaign_id is not None:
+        from app.services.agency_service import get_marketing_campaign_for_agency
+
+        get_marketing_campaign_for_agency(db, payload.marketing_campaign_id, current_user.agency_id)
+
     request = TravelRequest(
         **data,
         agency_id=current_user.agency_id,
@@ -507,6 +512,11 @@ def update_request(
     request_changes = collect_field_changes(request, updates, TRAVEL_REQUEST_AUDIT_FIELDS)
     record_travel_request_field_changes(db, request, request_changes, current_user)
     apply_updates(request, updates)
+
+    if "marketing_campaign_id" in updates and updates["marketing_campaign_id"] is not None:
+        from app.services.agency_service import get_marketing_campaign_for_agency
+
+        get_marketing_campaign_for_agency(db, updates["marketing_campaign_id"], current_user.agency_id)
 
     sync_primary_passenger_from_request(request, db, current_user)
     touch_request(request, current_user)
